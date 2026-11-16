@@ -1,13 +1,14 @@
 """
 Mosaic Weather Advisory and Alert System: hand-off to Power Automate
 
-Reads output/email.json and posts it to your Power Automate flow, which sends
-the email from your Outlook. The flow's address and a shared key come from
+Reads output/email.json and posts it, with the weather map page attached, to
+your Power Automate flow, which sends the email from your Outlook. The flow's address and a shared key come from
 GitHub secrets (MWS_FLOW_URL and MWS_FLOW_KEY), so they never sit in the code.
 
 Run it with:  python src/send_email.py
 """
 
+import base64
 import json
 import os
 import sys
@@ -18,6 +19,8 @@ import requests
 
 ROOT = Path(__file__).resolve().parent.parent
 EMAIL_PATH = ROOT / "output" / "email.json"
+MAP_PATH = ROOT / "output" / "weather-map.html"
+RESULTS_PATH = ROOT / "output" / "results.json"
 
 
 def main():
@@ -29,6 +32,14 @@ def main():
 
     payload = json.loads(EMAIL_PATH.read_text(encoding="utf-8"))
     payload["key"] = key
+
+    # Attach the weather map page, if it was built
+    if MAP_PATH.exists():
+        stamp = json.loads(RESULTS_PATH.read_text(encoding="utf-8"))["flag_days"][0]["date"]
+        payload["map_name"] = f"MWS Weather Map {stamp}.html"
+        payload["map_b64"] = base64.b64encode(MAP_PATH.read_bytes()).decode("ascii")
+    else:
+        payload["map_name"], payload["map_b64"] = "", ""
 
     last = None
     for attempt in range(3):
