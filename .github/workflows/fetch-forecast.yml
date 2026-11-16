@@ -1,42 +1,62 @@
-# Test run: pulls the forecast, applies the rules, and saves both files
-# for download. Start it by hand from the Actions tab (no schedule yet).
-name: Weather run (test)
+# Daily run at about 5:30 AM Eastern, plus a manual "Run workflow" button.
+name: Weather run
 
 on:
+  schedule:
+    - cron: "30 9 * * *"    # 5:30 AM Eastern during daylight saving time
+    - cron: "30 10 * * *"   # 5:30 AM Eastern during standard time
   workflow_dispatch:
 
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
+      - name: Check it's the 5 AM hour in Eastern time
+        id: clock
+        run: |
+          HOUR=$(TZ=America/New_York date +%H)
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$HOUR" != "05" ] && [ "$HOUR" != "06" ]; then
+            echo "go=no" >> "$GITHUB_OUTPUT"
+            echo "Eastern hour is $HOUR, so this is the off-season run. Skipping."
+          else
+            echo "go=yes" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Get the code
+        if: steps.clock.outputs.go == 'yes'
         uses: actions/checkout@v6
 
       - name: Set up Python
+        if: steps.clock.outputs.go == 'yes'
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Install libraries
+        if: steps.clock.outputs.go == 'yes'
         run: pip install -r requirements.txt
 
       - name: Pull the forecast
+        if: steps.clock.outputs.go == 'yes'
         run: python src/fetch_forecast.py
 
       - name: Apply the rules
+        if: steps.clock.outputs.go == 'yes'
         run: python src/evaluate.py
 
       - name: Build the email
+        if: steps.clock.outputs.go == 'yes'
         run: python src/build_email.py
 
       - name: Send the email through Power Automate
+        if: steps.clock.outputs.go == 'yes'
         env:
           MWS_FLOW_URL: ${{ secrets.MWS_FLOW_URL }}
           MWS_FLOW_KEY: ${{ secrets.MWS_FLOW_KEY }}
         run: python src/send_email.py
 
       - name: Save results for download
-        if: always()
+        if: always() && steps.clock.outputs.go == 'yes'
         uses: actions/upload-artifact@v6
         with:
           name: weather-run
