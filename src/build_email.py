@@ -11,6 +11,7 @@ Run it with:  python src/build_email.py
 """
 
 import json
+import os
 from datetime import datetime
 from html import escape
 from pathlib import Path
@@ -186,13 +187,19 @@ def main():
     today = flag_days[0]
     gen = datetime.fromisoformat(r["generated"])
 
+    # RUN_MODE is set by the workflow: morning, noon or manual
+    mode = os.environ.get("RUN_MODE", "morning")
+    tag = {"morning": "MWS 6 AM", "noon": "MWS noon update", "manual": "MWS update"}.get(mode, "MWS")
+    heading = {"morning": "6 AM network forecast", "noon": "Noon update, sent because there are flags,",
+               "manual": "On-demand update"}.get(mode, "Network forecast")
+
     flags, watches = collect_items(flag_days)
     if flags:
-        subject = f"⚠️ MWS 6 AM: {len(flags)} weather flag{'s' if len(flags) != 1 else ''} in the next 3 days"
+        subject = f"⚠️ {tag}: {len(flags)} weather flag{'s' if len(flags) != 1 else ''} in the next 3 days"
     elif watches:
-        subject = f"✅ MWS 6 AM: no flags, {len(watches)} heads-up{'s' if len(watches) != 1 else ''}"
+        subject = f"✅ {tag}: no flags, {len(watches)} heads-up{'s' if len(watches) != 1 else ''}"
     else:
-        subject = "✅ MWS 6 AM: all clear, no weather flags"
+        subject = f"✅ {tag}: all clear, no weather flags"
     if any(o["level"] == "a" for o in outlook_days):
         subject += " (potential hazard later this week)"
 
@@ -213,7 +220,7 @@ def main():
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:16px 10px">
 <table role="presentation" width="680" cellpadding="0" cellspacing="0" style="max-width:680px;width:100%"><tr><td>
 <div style="{FONT}font-size:22px;font-weight:bold;color:{GREEN}">Mosaic Weather System</div>
-<div style="{FONT}font-size:13px;color:{MUTED};margin-bottom:12px">6 AM network forecast for {gen.strftime('%A, %b ')}{gen.day}</div>
+<div style="{FONT}font-size:13px;color:{MUTED};margin-bottom:12px">{heading} for {gen.strftime('%A, %b ')}{gen.day}. The weather map is attached.</div>
 {note_html}
 {banner(flags, watches)}
 <div style="{FONT}font-size:15px;font-weight:bold;color:{INK};margin:20px 0 0">Today, {e(today['label'])}</div>
