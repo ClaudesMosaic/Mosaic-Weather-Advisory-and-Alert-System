@@ -1,66 +1,77 @@
-# Daily run at about 5:30 AM Eastern, plus a manual "Run workflow" button.
+# Daily 5:30 AM Eastern report, a noon update only when there are flags,
+# and a manual "Run workflow" button.
 name: Weather run
 
 on:
   schedule:
-    - cron: "30 9 * * *"    # 5:30 AM Eastern during daylight saving time
-    - cron: "30 10 * * *"   # 5:30 AM Eastern during standard time
+    - cron: "30 9 * * *"    # 5:30 AM Eastern, daylight saving time
+    - cron: "30 10 * * *"   # 5:30 AM Eastern, standard time
+    - cron: "0 16 * * *"    # noon Eastern, daylight saving time
+    - cron: "0 17 * * *"    # noon Eastern, standard time
   workflow_dispatch:
 
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-      - name: Check it's the 5 AM hour in Eastern time
+      - name: Work out which run this is
         id: clock
         run: |
           HOUR=$(TZ=America/New_York date +%H)
-          if [ "${{ github.event_name }}" = "schedule" ] && [ "$HOUR" != "05" ] && [ "$HOUR" != "06" ]; then
-            echo "go=no" >> "$GITHUB_OUTPUT"
-            echo "Eastern hour is $HOUR, so this is the off-season run. Skipping."
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            MODE=manual
+          elif [ "$HOUR" = "05" ] || [ "$HOUR" = "06" ]; then
+            MODE=morning
+          elif [ "$HOUR" = "12" ] || [ "$HOUR" = "13" ]; then
+            MODE=noon
           else
-            echo "go=yes" >> "$GITHUB_OUTPUT"
+            MODE=skip
           fi
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "Eastern hour is $HOUR, run mode: $MODE"
 
       - name: Get the code
-        if: steps.clock.outputs.go == 'yes'
+        if: steps.clock.outputs.mode != 'skip'
         uses: actions/checkout@v6
 
       - name: Set up Python
-        if: steps.clock.outputs.go == 'yes'
+        if: steps.clock.outputs.mode != 'skip'
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Install libraries
-        if: steps.clock.outputs.go == 'yes'
+        if: steps.clock.outputs.mode != 'skip'
         run: pip install -r requirements.txt
 
       - name: Pull the forecast
-        if: steps.clock.outputs.go == 'yes'
+        if: steps.clock.outputs.mode != 'skip'
         run: python src/fetch_forecast.py
 
       - name: Apply the rules
-        if: steps.clock.outputs.go == 'yes'
+        if: steps.clock.outputs.mode != 'skip'
         run: python src/evaluate.py
 
       - name: Build the email
-        if: steps.clock.outputs.go == 'yes'
+        if: steps.clock.outputs.mode != 'skip'
+        env:
+          RUN_MODE: ${{ steps.clock.outputs.mode }}
         run: python src/build_email.py
 
       - name: Build the weather map
-        if: steps.clock.outputs.go == 'yes'
+        if: steps.clock.outputs.mode != 'skip'
         run: python src/build_map.py
 
       - name: Send the email through Power Automate
-        if: steps.clock.outputs.go == 'yes'
+        if: steps.clock.outputs.mode != 'skip'
         env:
+          RUN_MODE: ${{ steps.clock.outputs.mode }}
           MWS_FLOW_URL: ${{ secrets.MWS_FLOW_URL }}
           MWS_FLOW_KEY: ${{ secrets.MWS_FLOW_KEY }}
         run: python src/send_email.py
 
       - name: Save results for download
-        if: always() && steps.clock.outputs.go == 'yes'
+        if: always() && steps.clock.outputs.mode != 'skip'
         uses: actions/upload-artifact@v6
         with:
           name: weather-run
