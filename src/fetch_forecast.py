@@ -120,7 +120,7 @@ def nws_hourly(session, lat, lon, tz):
     def slot(dt):
         return hours.setdefault(dt, {"temp_f": None, "pop": 0, "precip_in": 0.0,
                                      "snow_in": 0.0, "ice_in": 0.0, "types": set(),
-                                     "gust_mph": None})
+                                     "gust_mph": None, "sky": None})
 
     def each_hour(layer):
         data = grid.get(layer) or {}
@@ -134,6 +134,8 @@ def nws_hourly(session, lat, lon, tz):
         slot(dt)["temp_f"] = to_f(val, uom)
     for dt, val, uom, _ in each_hour("probabilityOfPrecipitation"):
         slot(dt)["pop"] = val or 0
+    for dt, val, uom, _ in each_hour("skyCover"):
+        slot(dt)["sky"] = val
     # Amount layers are totals over the period, so spread them evenly by hour
     for layer, field in (("quantitativePrecipitation", "precip_in"),
                          ("snowfallAmount", "snow_in"),
@@ -177,7 +179,7 @@ def open_meteo_hourly(session, points, tz_name, days):
         "latitude": ",".join(f"{points[k]['lat']:.4f}" for k in keys),
         "longitude": ",".join(f"{points[k]['lon']:.4f}" for k in keys),
         "hourly": "temperature_2m,precipitation_probability,precipitation,"
-                  "snowfall,weather_code,wind_gusts_10m",
+                  "snowfall,weather_code,wind_gusts_10m,cloud_cover",
         "temperature_unit": "fahrenheit",
         "precipitation_unit": "inch",
         "wind_speed_unit": "mph",
@@ -211,6 +213,7 @@ def open_meteo_hourly(session, points, tz_name, days):
                 "ice_in": 0.0,  # not provided by Open-Meteo
                 "types": types,
                 "gust_mph": h["wind_gusts_10m"][i],
+                "sky": (h.get("cloud_cover") or [None] * len(h["time"]))[i],
             }
         result[key] = finish_series(hours, tz)
     return result
@@ -235,6 +238,7 @@ def finish_series(hours, tz):
             "snow": bool(h["types"] & SNOW_TYPES) or h["snow_in"] > 0,
             "types": sorted(h["types"]),
             "gust_mph": None if h["gust_mph"] is None else round(h["gust_mph"]),
+            "sky": None if h.get("sky") is None else round(h["sky"]),
         })
     return out
 
