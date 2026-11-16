@@ -1,0 +1,32 @@
+# Test run: pulls the forecast and saves it as a downloadable file.
+# Start it by hand from the Actions tab (no schedule yet).
+name: Fetch forecast (test)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install libraries
+        run: pip install -r requirements.txt
+
+      - name: Pull the forecast
+        run: python src/fetch_forecast.py
+
+      - name: Save forecast.json for download
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forecast
+          path: output/forecast.json
+          if-no-files-found: warn
