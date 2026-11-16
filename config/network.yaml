@@ -206,7 +206,7 @@ heads_up:
 sources:
   primary: nws          # National Weather Service, api.weather.gov
   backup: open_meteo    # used automatically if NWS is unavailable
-  nws_user_agent: "Mosaic Weather System (YOUR-EMAIL@mosaictileco.com)"   # NWS asks for contact info; put your work email here
+  nws_user_agent: "Mosaic Weather System (ageldart1@mosaictileco.com)"   # NWS asks for contact info; put your work email here
 
 # ------------------------------------------------------------------
 # Links on the weather page
