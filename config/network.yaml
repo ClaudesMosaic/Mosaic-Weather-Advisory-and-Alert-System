@@ -1,0 +1,221 @@
+# Mosaic Weather Advisory and Alert System: network configuration
+# Every setting the system uses lives here. Edit this file to change
+# locations, routes, schedules or rules; no code changes needed.
+#
+# Coordinates marked "verify" are approximate. To get exact ones, right-click
+# the building in Google Maps and click the numbers at the top of the menu
+# to copy them.
+
+timezone: America/New_York
+report_time: "06:00"
+forecast_days: 3
+
+# ------------------------------------------------------------------
+# Locations
+# ------------------------------------------------------------------
+locations:
+  csc:
+    name: CSC (Doswell)
+    address: 17320 Washington Hwy, Doswell, VA
+    state: VA
+    lat: 37.8600      # verify
+    lon: -77.4600     # verify
+  chantilly:
+    name: Chantilly
+    address: 3935 Stonecroft Blvd, Chantilly, VA 20151
+    state: VA
+    lat: 38.8960      # verify
+    lon: -77.4480     # verify
+  fairfax:
+    name: Fairfax
+    address: 8400 Hilltop Rd Ste E, Fairfax, VA 22031
+    state: VA
+    lat: 38.8730      # verify
+    lon: -77.2360     # verify
+  alexandria:
+    name: Alexandria
+    address: 821 S Pickett St, Alexandria, VA 22304
+    state: VA
+    lat: 38.8100      # verify
+    lon: -77.1220     # verify
+  richmond:
+    name: Richmond
+    address: 10911 Trade Rd, Richmond, VA 23236
+    state: VA
+    lat: 37.4800      # verify
+    lon: -77.6000     # verify
+  vabeach:
+    name: Virginia Beach
+    address: 2644 Barrett St, Virginia Beach, VA 23452
+    state: VA
+    lat: 36.8400      # verify
+    lon: -76.1100     # verify
+  nbethesda:
+    name: North Bethesda
+    address: 11724 Parklawn Dr, Rockville, MD 20852
+    state: MD
+    lat: 39.0550      # verify
+    lon: -77.1100     # verify
+  owings:
+    name: Owings Mills
+    address: 10715 Red Run Blvd Ste 104, Owings Mills, MD 21117
+    state: MD
+    lat: 39.4100      # verify
+    lon: -76.7850     # verify
+  raleigh:
+    name: Raleigh
+    address: 2641 Noblin Rd, Raleigh, NC 27604
+    state: NC
+    lat: 35.8350      # verify
+    lon: -78.5900     # verify
+  greensboro:
+    name: Greensboro
+    address: 4008 Spring Garden St, Greensboro, NC 27407
+    state: NC
+    lat: 36.0656
+    lon: -79.8650     # verify
+
+# ------------------------------------------------------------------
+# Route checkpoints (points along the highways that get their own forecast)
+# ------------------------------------------------------------------
+checkpoints:
+  fred:    {name: I-95 Fredericksburg,          lat: 38.30, lon: -77.47}
+  wood:    {name: I-95 Woodbridge,              lat: 38.62, lon: -77.29}
+  spring:  {name: I-95 Springfield interchange, lat: 38.78, lon: -77.18}
+  tysons:  {name: I-495 Tysons,                 lat: 38.93, lon: -77.22}
+  i66:     {name: I-66 Fair Oaks,               lat: 38.87, lon: -77.36}
+  cpark:   {name: I-95/I-495 College Park,      lat: 39.01, lon: -76.92}
+  b695:    {name: I-695 Baltimore Beltway,      lat: 39.36, lon: -76.75}
+  rva95:   {name: I-95 north Richmond,          lat: 37.66, lon: -77.46}
+  wburg:   {name: I-64 Williamsburg,            lat: 37.28, lon: -76.70}
+  hrbt:    {name: I-64 Hampton Roads crossings, lat: 36.99, lon: -76.32}
+  suffolk: {name: US-58 Suffolk,                lat: 36.73, lon: -76.58}  # assumed route, confirm
+  emporia: {name: I-95 Emporia,                 lat: 36.69, lon: -77.54}  # assumed route, confirm
+  rockymt: {name: I-95 Rocky Mount,             lat: 35.94, lon: -77.80}  # assumed route, confirm
+  hend:    {name: I-85 Henderson NC,            lat: 36.33, lon: -78.40}
+  shill:   {name: I-85 South Hill,              lat: 36.73, lon: -78.13}
+  ptrsbg:  {name: I-85 Petersburg,              lat: 37.20, lon: -77.40}
+  durham:  {name: I-85 Durham,                  lat: 36.03, lon: -78.90}
+  burl:    {name: I-85/I-40 Burlington,         lat: 36.08, lon: -79.44}
+
+# ------------------------------------------------------------------
+# Truck runs
+# drive_min values are estimated normal drive times, to be tuned once we
+# compare against real trips. Stop time is 30 to 60 minutes; the system plans
+# on the middle and widens each check window to cover the full range.
+# ------------------------------------------------------------------
+stop_minutes: {min: 30, max: 60}
+
+runs:
+  northern_loop:
+    name: Northern loop
+    operator: Mosaic truck
+    days: [Mon, Tue, Wed, Thu, Fri]
+    depart: "17:30"
+    legs:
+      - {from: csc,        to: alexandria, drive_min: 90, via: [fred, wood, spring]}
+      - {from: alexandria, to: nbethesda,  drive_min: 45, via: [tysons]}
+      - {from: nbethesda,  to: chantilly,  drive_min: 45, via: [tysons, i66]}
+      - {from: chantilly,  to: fairfax,    drive_min: 30, via: [i66]}
+      - {from: fairfax,    to: csc,        drive_min: 90, via: [spring, wood, fred]}
+
+  southern_loop:
+    name: Southern loop
+    operator: Mosaic truck
+    days: [Mon, Tue, Wed, Thu, Fri]
+    depart: "16:30"
+    legs:
+      - {from: csc,     to: vabeach, drive_min: 135, via: [wburg, hrbt]}
+      - {from: vabeach, to: raleigh, drive_min: 180, via: [suffolk, emporia, rockymt]}
+      - {from: raleigh, to: csc,     drive_min: 180, via: [hend, shill, ptrsbg]}
+
+  baltimore:
+    name: Baltimore
+    operator: Mosaic box truck
+    days: [Mon, Tue, Wed, Thu, Fri]
+    depart: "05:00"
+    legs:
+      - {from: nbethesda, to: owings, drive_min: 60, via: [cpark, b695]}
+
+  greensboro:
+    name: Greensboro
+    operator: Third-party carrier
+    days: [Mon, Tue, Wed, Thu, Fri]
+    depart: "07:15"
+    legs:
+      - {from: raleigh, to: greensboro, drive_min: 90, via: [durham, burl]}
+
+  richmond_morning:
+    name: Richmond (morning)
+    operator: Mosaic box truck
+    days: [Tue, Wed, Thu, Fri]
+    depart: "04:00"
+    legs:
+      - {from: csc, to: richmond, drive_min: 45, via: [rva95]}
+
+  richmond_friday:
+    name: Richmond (Friday)
+    operator: Mosaic box truck
+    days: [Fri]
+    depart: "15:00"
+    depart_flex_min: 60          # leaves between 3 and 4 PM
+    legs:
+      - {from: csc, to: richmond, drive_min: 45, via: [rva95]}
+
+# ------------------------------------------------------------------
+# Time windows for employee travel and store openings (local time)
+# ------------------------------------------------------------------
+windows:
+  am_rush: {start: "05:00", end: "09:00"}
+  pm_rush: {start: "15:00", end: "19:00"}
+
+# ------------------------------------------------------------------
+# Flag rules (reporting only, not go or no-go calls)
+# ------------------------------------------------------------------
+rules:
+  ice:
+    description: Any freezing rain, freezing drizzle or sleet
+    applies: always
+  official_alert:
+    description: NWS winter alert covering the location or checkpoint
+    events:
+      - Ice Storm Warning
+      - Winter Storm Warning
+      - Winter Storm Watch
+      - Winter Weather Advisory
+  rush_hour_snow:
+    description: Snow during the AM or PM rush
+    min_inches: 0.5
+    windows: [am_rush, pm_rush]
+  truck_snow:
+    description: Snow while a truck is expected on a stretch
+    min_inches: 1.0
+  heavy_snow:
+    description: Heavy snow at any time
+    min_inches_12h: 3.0
+    min_inches_1h: 1.0
+
+# Below-threshold conditions worth mentioning, shown as "Heads-up"
+heads_up:
+  enabled: true
+  near_threshold_fraction: 0.75   # e.g. 0.4" of rush-hour snow vs the 0.5" flag
+
+# ------------------------------------------------------------------
+# Data sources
+# ------------------------------------------------------------------
+sources:
+  primary: nws          # National Weather Service, api.weather.gov
+  backup: open_meteo    # used automatically if NWS is unavailable
+  nws_user_agent: "Mosaic Weather System (YOUR-EMAIL@mosaictileco.com)"   # NWS asks for contact info; put your work email here
+
+# ------------------------------------------------------------------
+# Links on the weather page
+# ------------------------------------------------------------------
+links:
+  sigalert: "https://www.sigalert.com/?lat={lat}&lon={lon}&z={zoom}"
+  sigalert_store_zoom: 4
+  sigalert_va_default: {lat: 37.75, lon: -77.45, zoom: 2}
+  cameras:
+    VA: https://511.vdot.virginia.gov
+    MD: https://chart.maryland.gov
+    NC: https://drivenc.gov
