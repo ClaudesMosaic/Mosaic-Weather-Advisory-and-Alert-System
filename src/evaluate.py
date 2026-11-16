@@ -39,7 +39,9 @@ def worse(a, b):
 
 
 def clock(dt):
-    """datetime -> '7:30 PM'"""
+    """datetime -> '7:30 PM' (and 'midnight' / 'noon')"""
+    if dt.minute == 0 and dt.hour in (0, 12):
+        return "midnight" if dt.hour == 0 else "noon"
     return dt.strftime("%I:%M %p").lstrip("0").replace(":00 ", " ")
 
 
