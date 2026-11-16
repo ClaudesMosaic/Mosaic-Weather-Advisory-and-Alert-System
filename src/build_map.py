@@ -200,12 +200,12 @@ def flag_view(i, day, cfg, xy, xy_in):
                     f'<td class="n">{hi} / {lo}</td><td class="n">{s["pop"]}%</td><td class="n">{s["rain_in"]:.2f}"</td>'
                     f'<td class="n">{s["snow_in"]:.1f}"</td><td class="lk">{links_html(cfg, k)}</td></tr>')
 
-    return (f'<section class="view v{i}"><div class="grid"><div class="mapbox">{map_svg(cfg, main, inset_scaled, inset_marks, "Truck lanes and locations for " + day["label"])}'
+    return (f'<section class="view v{i}"><div class="grid"><div class="col"><div class="mapbox">{map_svg(cfg, main, inset_scaled, inset_marks, "Truck lanes and locations for " + day["label"])}'
             f'<div class="legend"><span><i class="sw" style="background:var(--flag)"></i>Flagged</span><span><i class="sw" style="background:var(--watch)"></i>Heads-up</span>'
             f'<span><i class="sw" style="background:var(--clear)"></i>Clear</span><span>Lanes are colored stretch by stretch for the hours each truck is expected there. Hover for names.</span></div></div>'
-            f'<aside class="panel"><h2>{e(day["label"])}</h2>{flag_list}<h3>Truck runs</h3>{runs_html}</aside></div>'
             f'<div class="tablewrap"><table><thead><tr><th>Location</th><th>Conditions</th><th class="n">High / Low</th><th class="n">Precip</th>'
-            f'<th class="n">Rain</th><th class="n">Snow</th><th>Traffic</th></tr></thead><tbody>{"".join(rows)}</tbody></table></div></section>')
+            f'<th class="n">Rain</th><th class="n">Snow</th><th>Traffic</th></tr></thead><tbody>{"".join(rows)}</tbody></table></div></div>'
+            f'<aside class="panel"><h2>{e(day["label"])}</h2>{flag_list}<h3>Truck runs</h3>{runs_html}</aside></div></section>')
 
 
 def outlook_view(i, o, cfg, xy, xy_in):
@@ -237,12 +237,12 @@ def outlook_view(i, o, cfg, xy, xy_in):
         rows.append(f'<tr><td><span class="dotk o-{v["level"]}"></span><b>{e(names[k])}</b></td><td>{e(v["conditions"])}</td>'
                     f'<td class="n">{hi} / {lo}</td><td class="n">{v["pop"]}%</td><td>{e(v["note"])}</td><td class="lk">{links_html(cfg, k)}</td></tr>')
 
-    return (f'<section class="view v{i}"><div class="grid"><div class="mapbox">{map_svg(cfg, main, "", inset_marks, "Outlook for " + o["label"])}'
+    return (f'<section class="view w{i}"><div class="grid"><div class="col"><div class="mapbox">{map_svg(cfg, main, "", inset_marks, "Outlook for " + o["label"])}'
             f'<div class="legend"><span><i class="sw" style="background:var(--o-a)"></i>Potential hazard</span><span><i class="sw" style="background:var(--o-y)"></i>Worth watching</span>'
             f'<span><i class="sw" style="background:var(--o-g)"></i>Nothing notable</span><span>Early signals, not flags. Truck lanes appear once a day is within 3 days.</span></div></div>'
-            f'<aside class="panel"><h2>{e(o["label"])} <span class="conf">{e(o["confidence"])} confidence</span></h2><p>{e(o["summary"])}</p>{"".join(groups)}</aside></div>'
             f'<div class="tablewrap"><table><thead><tr><th>Location</th><th>Conditions</th><th class="n">High / Low</th><th class="n">Precip</th><th>Outlook</th><th>Traffic</th></tr></thead>'
-            f'<tbody>{"".join(rows)}</tbody></table></div></section>')
+            f'<tbody>{"".join(rows)}</tbody></table></div></div>'
+            f'<aside class="panel"><h2>{e(o["label"])} <span class="conf">{e(o["confidence"])} confidence</span></h2><p>{e(o["summary"])}</p>{"".join(groups)}</aside></div></section>')
 
 
 # ----------------------------------------------------------------------
@@ -260,9 +260,13 @@ a{color:var(--green)}@media (prefers-color-scheme:dark){a{color:var(--clear)}}
 header{border-bottom:4px solid var(--brand);padding-bottom:10px}h1{margin:0;font-size:1.8rem;line-height:1.1}.sub{color:var(--muted);margin:4px 0 0;font-size:.9rem}
 .note{color:var(--flag);font-size:.9rem}
 input.r{position:absolute;opacity:0;pointer-events:none}
-.bar{display:flex;flex-wrap:wrap;gap:6px 18px;margin:16px 0 12px;align-items:flex-end}
-.grp{display:flex;flex-direction:column;gap:6px}.grp>span{font-size:.85rem;font-weight:600;color:var(--muted)}
-.days{display:flex;flex-wrap:wrap;gap:6px}
+.rangebar{display:flex;flex-wrap:wrap;align-items:flex-end;gap:0;margin:14px 0 10px;border-bottom:2px solid var(--line)}
+.rangebar>label{padding:8px 14px;font-weight:600;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-2px;cursor:pointer}
+.cnt{display:inline-block;background:var(--flag);color:#fff;border-radius:9px;font-size:.72rem;padding:0 6px;margin-left:4px}
+.modes{margin-left:auto;display:flex;gap:0;padding-bottom:6px}
+.modes label{border:1px solid var(--line);background:var(--surface);padding:3px 14px;font-weight:600;font-size:.88rem;cursor:pointer}
+.modes label:first-child{border-radius:6px 0 0 6px}.modes label:last-child{border-radius:0 6px 6px 0;border-left:0}
+.days{display:none;flex-wrap:wrap;gap:6px;margin:0 0 12px}
 .days label{border:2px solid var(--line);background:var(--surface);border-radius:8px;padding:6px 12px;cursor:pointer;min-width:118px}
 .days label b{display:block;font-size:1rem}.days label small{font-size:.8rem;color:var(--muted)}
 .days label small.f{color:var(--flag);font-weight:600}
@@ -301,9 +305,9 @@ details{border-top:1px solid var(--line);padding:6px 0}summary{cursor:pointer}
 .ogroup{margin:10px 0 0}.ogroup span{display:block;font-size:.9rem;color:var(--muted)}.ogroup span b{color:var(--ink)}
 .gh{display:block}.osw{display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:-1px;margin-right:6px;border:1px solid #5b6a60}
 .osw.o-a{background:var(--o-a)}.osw.o-y{background:var(--o-y)}.osw.o-g{background:var(--o-g)}
-.tablewrap{overflow-x:auto;margin-top:14px;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+.tablewrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px}
 table{border-collapse:collapse;width:100%;min-width:720px;font-size:.9rem}th,td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
-th{background:var(--green);color:#fff;font-weight:600}td.n,th.n{text-align:right;white-space:nowrap}
+th{background:var(--green);color:#fff;font-weight:600}td.n,th.n{text-align:right;white-space:nowrap}td:first-child{white-space:nowrap}
 tr.flag td{background:var(--flag-soft)}tr.watch td{background:var(--watch-soft)}td.lk a{margin-right:10px;white-space:nowrap}
 .dotk{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px}
 .dotk.flag{background:var(--flag)}.dotk.watch{background:var(--watch)}.dotk.clear{background:var(--clear)}
@@ -327,25 +331,40 @@ def main():
             t = datetime.strptime(run["depart"], "%H:%M")
             run["depart_label"] = t.strftime("%I:%M %p").lstrip("0").replace(":00 ", " ")
 
-    days = r["flag_days"] + r["outlook_days"]
-    radios = "".join(f'<input class="r" type="radio" name="day" id="d{i}"{" checked" if i == 0 else ""}>' for i in range(len(days)))
+    fd, od = r["flag_days"], r["outlook_days"]
+    radios = ('<input class="r" type="radio" name="range" id="r3" checked><input class="r" type="radio" name="range" id="r7">'
+              + "".join(f'<input class="r" type="radio" name="fday" id="d{i}"{" checked" if i == 0 else ""}>' for i in range(len(fd)))
+              + "".join(f'<input class="r" type="radio" name="oday" id="o{j}"{" checked" if j == 0 else ""}>' for j in range(len(od)))
+              + '<input class="r" type="radio" name="mode" id="vmap" checked><input class="r" type="radio" name="mode" id="vdet">')
 
     def flag_label(i, d):
         nf = sum(1 for v in d["locations"].values() if v["status"] == "flag") + sum(1 for x in d["runs"] if x["status"] == "flag")
         txt = f'<small class="f">{nf} flag{"s" if nf != 1 else ""}</small>' if nf else "<small>No flags</small>"
         return f'<label for="d{i}"><b>{e(d["label"])}</b>{txt}</label>'
 
-    def out_label(i, o):
-        return f'<label for="d{i}"><b>{e(o["label"])}</b><span class="lv {o["level"]}">{OUT_WORD[o["level"]]}</span></label>'
+    def out_label(j, o):
+        return f'<label for="o{j}"><b>{e(o["label"])}</b><span class="lv {o["level"]}">{OUT_WORD[o["level"]]}</span></label>'
 
-    nflag = len(r["flag_days"])
-    bar = (f'<div class="bar"><div class="grp"><span>Next 3 days</span><div class="days">{"".join(flag_label(i, d) for i, d in enumerate(r["flag_days"]))}</div></div>'
-           + (f'<div class="grp"><span>What\'s coming, days 4 to 7</span><div class="days">{"".join(out_label(nflag + j, o) for j, o in enumerate(r["outlook_days"]))}</div></div>' if r["outlook_days"] else "")
-           + "</div>")
+    tot = sum(1 for d in fd for v in d["locations"].values() if v["status"] == "flag") + sum(1 for d in fd for x in d["runs"] if x["status"] == "flag")
+    top = max((o["level"] for o in od), key={"g": 0, "y": 1, "a": 2}.get, default="g")
+    tabs = (f'<div class="rangebar"><label for="r3">Next 3 days{f" <span class=cnt>{tot}</span>" if tot else ""}</label>'
+            + (f'<label for="r7">What\'s coming, days 4 to 7{"" if top == "g" else f" <span class=\"lv {top}\">{OUT_WORD[top]}</span>"}</label>' if od else "")
+            + '<span class="modes"><label for="vmap">Map</label><label for="vdet">Details</label></span></div>')
+    bar = (tabs + f'<div class="days bar3">{"".join(flag_label(i, d) for i, d in enumerate(fd))}</div>'
+           + f'<div class="days bar7">{"".join(out_label(j, o) for j, o in enumerate(od))}</div>')
     views = "".join(flag_view(i, d, cfg, xy, xy_in) for i, d in enumerate(r["flag_days"]))
-    views += "".join(outlook_view(nflag + j, o, cfg, xy, xy_in) for j, o in enumerate(r["outlook_days"]))
-    show = "".join(f'#d{i}:checked~.views .v{i}{{display:block}}#d{i}:checked~.bar label[for=d{i}]{{border-color:var(--green);box-shadow:inset 0 0 0 1px var(--green)}}'
-                   f'#d{i}:focus-visible~.bar label[for=d{i}]{{outline:3px solid var(--brand);outline-offset:2px}}' for i in range(len(days)))
+    views += "".join(outlook_view(j, o, cfg, xy, xy_in) for j, o in enumerate(r["outlook_days"]))
+    sel = "border-color:var(--green);box-shadow:inset 0 0 0 1px var(--green)"
+    show = ("#r3:checked~.bar3,#r7:checked~.bar7{display:flex}"
+            f"#r3:checked~.rangebar label[for=r3],#r7:checked~.rangebar label[for=r7]{{color:var(--ink);border-bottom-color:var(--green)}}"
+            f"#vmap:checked~.rangebar label[for=vmap],#vdet:checked~.rangebar label[for=vdet]{{background:var(--green);color:#fff;border-color:var(--green)}}"
+            "#vmap:checked~.views .tablewrap{display:none}#vdet:checked~.views .mapbox{display:none}")
+    for i in range(len(fd)):
+        show += f"#r3:checked~#d{i}:checked~.views .v{i}{{display:block}}#d{i}:checked~.bar3 label[for=d{i}]{{{sel}}}"
+    for j in range(len(od)):
+        show += f"#r7:checked~#o{j}:checked~.views .w{j}{{display:block}}#o{j}:checked~.bar7 label[for=o{j}]{{{sel}}}"
+    show += "".join(f"#{x}:focus-visible~* label[for={x}]{{outline:3px solid var(--brand);outline-offset:2px}}"
+                    for x in ["r3", "r7", "vmap", "vdet"] + [f"d{i}" for i in range(len(fd))] + [f"o{j}" for j in range(len(od))])
 
     note = f'<p class="note">No forecast available for: {e(", ".join(r["missing"]))}.</p>' if r.get("missing") else ""
     va = cfg.get("links", {}).get("sigalert_va_default", {})
