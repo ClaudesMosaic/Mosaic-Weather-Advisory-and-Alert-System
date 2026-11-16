@@ -8,7 +8,7 @@
 
 timezone: America/New_York
 report_time: "06:00"
-forecast_days: 3
+forecast_days: 7
 
 # ------------------------------------------------------------------
 # Locations
