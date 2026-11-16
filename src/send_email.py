@@ -30,6 +30,15 @@ def main():
         print("MWS_FLOW_URL or MWS_FLOW_KEY is not set, so no email was sent.")
         sys.exit(1)
 
+    # The noon run only sends when there's at least one flag in the next 3 days
+    if os.environ.get("RUN_MODE") == "noon":
+        results = json.loads(RESULTS_PATH.read_text(encoding="utf-8"))
+        flagged = any(v["status"] == "flag" for d in results["flag_days"] for v in d["locations"].values()) or \
+            any(x["status"] == "flag" for d in results["flag_days"] for x in d["runs"])
+        if not flagged:
+            print("Noon run: no flags in the next 3 days, so no email today.")
+            return
+
     payload = json.loads(EMAIL_PATH.read_text(encoding="utf-8"))
     payload["key"] = key
 
