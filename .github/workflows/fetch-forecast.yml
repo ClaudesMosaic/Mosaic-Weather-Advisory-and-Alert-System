@@ -26,6 +26,9 @@ jobs:
       - name: Apply the rules
         run: python src/evaluate.py
 
+      - name: Build the email
+        run: python src/build_email.py
+
       - name: Save results for download
         if: always()
         uses: actions/upload-artifact@v6
