@@ -50,7 +50,7 @@ INSET_LABELS = {
     "chantilly": (0, -15, "middle"), "fairfax": (4, 24, "end"), "alexandria": (12, 5, "start"),
     "nbethesda": (0, -15, "middle"), "owings": (-12, 5, "end"),
 }
-CAMERA_NAMES = {"VA": "VDOT 511 cameras", "MD": "MD CHART cameras", "NC": "DriveNC cameras"}
+CAMERA_NAMES = {"VA": "VDOT 511", "MD": "MD CHART", "NC": "DriveNC"}
 STATUS_WORD = {"flag": "Flagged", "watch": "Heads-up", "clear": "Clear"}
 OUT_WORD = {"a": "Potential hazard", "y": "Worth watching", "g": "Nothing notable"}
 RANK = {"clear": 0, "watch": 1, "flag": 2}
@@ -204,7 +204,7 @@ def flag_view(i, day, cfg, xy, xy_in):
             f'<div class="legend"><span><i class="sw" style="background:var(--flag)"></i>Flagged</span><span><i class="sw" style="background:var(--watch)"></i>Heads-up</span>'
             f'<span><i class="sw" style="background:var(--clear)"></i>Clear</span><span>Lanes are colored stretch by stretch for the hours each truck is expected there. Hover for names.</span></div></div>'
             f'<div class="tablewrap"><table><thead><tr><th>Location</th><th>Conditions</th><th class="n">High / Low</th><th class="n">Precip</th>'
-            f'<th class="n">Rain</th><th class="n">Snow</th><th>Traffic</th></tr></thead><tbody>{"".join(rows)}</tbody></table></div></div>'
+            f'<th class="n">Rain</th><th class="n">Snow</th><th>Traffic cameras</th></tr></thead><tbody>{"".join(rows)}</tbody></table></div></div>'
             f'<aside class="panel"><h2>{e(day["label"])}</h2>{flag_list}<h3>Truck runs</h3>{runs_html}</aside></div></section>')
 
 
@@ -240,7 +240,7 @@ def outlook_view(i, o, cfg, xy, xy_in):
     return (f'<section class="view w{i}"><div class="grid"><div class="col"><div class="mapbox">{map_svg(cfg, main, "", inset_marks, "Outlook for " + o["label"])}'
             f'<div class="legend"><span><i class="sw" style="background:var(--o-a)"></i>Potential hazard</span><span><i class="sw" style="background:var(--o-y)"></i>Worth watching</span>'
             f'<span><i class="sw" style="background:var(--o-g)"></i>Nothing notable</span><span>Early signals, not flags. Truck lanes appear once a day is within 3 days.</span></div></div>'
-            f'<div class="tablewrap"><table><thead><tr><th>Location</th><th>Conditions</th><th class="n">High / Low</th><th class="n">Precip</th><th>Outlook</th><th>Traffic</th></tr></thead>'
+            f'<div class="tablewrap"><table><thead><tr><th>Location</th><th>Conditions</th><th class="n">High / Low</th><th class="n">Precip</th><th>Outlook</th><th>Traffic cameras</th></tr></thead>'
             f'<tbody>{"".join(rows)}</tbody></table></div></div>'
             f'<aside class="panel"><h2>{e(o["label"])} <span class="conf">{e(o["confidence"])} confidence</span></h2><p>{e(o["summary"])}</p>{"".join(groups)}</aside></div></section>')
 
@@ -306,7 +306,7 @@ details{border-top:1px solid var(--line);padding:6px 0}summary{cursor:pointer}
 .gh{display:block}.osw{display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:-1px;margin-right:6px;border:1px solid #5b6a60}
 .osw.o-a{background:var(--o-a)}.osw.o-y{background:var(--o-y)}.osw.o-g{background:var(--o-g)}
 .tablewrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px}
-table{border-collapse:collapse;width:100%;min-width:720px;font-size:.9rem}th,td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+table{border-collapse:collapse;width:100%;min-width:560px;font-size:.9rem}th,td{padding:7px 8px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
 th{background:var(--green);color:#fff;font-weight:600}td.n,th.n{text-align:right;white-space:nowrap}td:first-child{white-space:nowrap}
 tr.flag td{background:var(--flag-soft)}tr.watch td{background:var(--watch-soft)}td.lk a{margin-right:10px;white-space:nowrap}
 .dotk{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px}
