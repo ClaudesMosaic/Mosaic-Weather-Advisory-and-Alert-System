@@ -48,6 +48,10 @@ jobs:
         if: steps.clock.outputs.go == 'yes'
         run: python src/build_email.py
 
+      - name: Build the weather map
+        if: steps.clock.outputs.go == 'yes'
+        run: python src/build_map.py
+
       - name: Send the email through Power Automate
         if: steps.clock.outputs.go == 'yes'
         env:
