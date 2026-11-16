@@ -29,6 +29,12 @@ jobs:
       - name: Build the email
         run: python src/build_email.py
 
+      - name: Send the email through Power Automate
+        env:
+          MWS_FLOW_URL: ${{ secrets.MWS_FLOW_URL }}
+          MWS_FLOW_KEY: ${{ secrets.MWS_FLOW_KEY }}
+        run: python src/send_email.py
+
       - name: Save results for download
         if: always()
         uses: actions/upload-artifact@v6
