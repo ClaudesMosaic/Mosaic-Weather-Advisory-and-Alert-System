@@ -100,7 +100,7 @@ def banner(flags, watches):
 
 def item_row(day, who, text, bg, rule):
     td = f"style=\"{FONT}font-size:14px;color:{INK};padding:6px 8px 6px 0;border-bottom:1px solid {rule};vertical-align:top\""
-    return f"<tr><td {td}><b>{e(day)}</b></td><td {td}><b>{e(who)}</b></td><td {td}>{e(text)}</td></tr>"
+    return f"<tr><td width=\"95\" {td}><b>{e(day)}</b></td><td width=\"150\" {td}><b>{e(who)}</b></td><td {td}>{e(text)}</td></tr>"
 
 
 def forecast_tables(day, cfg):
@@ -122,14 +122,15 @@ def forecast_tables(day, cfg):
             td = f"style=\"{FONT}font-size:14px;color:{INK};padding:6px 8px;border-bottom:1px solid {LINE};background:{bg}\""
             tdr = td.replace("padding:6px 8px", "padding:6px 8px;text-align:right")
             rows.append(
-                f"<tr><td {td}>{mark}<b>{e(v['name'])}</b></td><td {td}>{e(s['conditions'])}</td>"
-                f"<td {tdr}>{temp(s['high'])} / {temp(s['low'])}</td><td {tdr}>{s['pop']}%</td>"
-                f"<td {tdr}>{s['rain_in']:.2f}\"</td><td {tdr}>{s['snow_in']:.1f}\"</td></tr>")
+                f"<tr><td width=\"170\" {td}>{mark}<b>{e(v['name'])}</b></td><td width=\"165\" {td}>{e(s['conditions'])}</td>"
+                f"<td width=\"115\" {tdr}>{temp(s['high'])} / {temp(s['low'])}</td><td width=\"75\" {tdr}>{s['pop']}%</td>"
+                f"<td width=\"75\" {tdr}>{s['rain_in']:.2f}\"</td><td width=\"80\" {tdr}>{s['snow_in']:.1f}\"</td></tr>")
         out.append(
             f"<div style=\"{FONT}font-size:15px;font-weight:bold;color:{INK};margin:18px 0 6px\">{e(STATE_NAMES.get(state, state))}</div>"
-            f"<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;table-layout:fixed\">"
-            f"<colgroup><col width=\"26%\"><col width=\"24%\"><col width=\"17%\"><col width=\"11%\"><col width=\"11%\"><col width=\"11%\"></colgroup>"
-            f"<tr><th {th}>Location</th><th {th}>Conditions</th><th {thr}>High / Low</th><th {thr}>Precip</th><th {thr}>Rain</th><th {thr}>Snow</th></tr>"
+            f"<table role=\"presentation\" width=\"680\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;table-layout:fixed;width:100%;max-width:680px\">"
+            f"<colgroup><col width=\"170\"><col width=\"165\"><col width=\"115\"><col width=\"75\"><col width=\"75\"><col width=\"80\"></colgroup>"
+            f"<tr><th width=\"170\" {th}>Location</th><th width=\"165\" {th}>Conditions</th><th width=\"115\" {thr}>High / Low</th>"
+            f"<th width=\"75\" {thr}>Precip</th><th width=\"75\" {thr}>Rain</th><th width=\"80\" {thr}>Snow</th></tr>"
             f"{''.join(rows)}</table>")
     return "".join(out)
 
@@ -166,8 +167,8 @@ def outlook(outlook_days):
             color, word = "#e1e6df", "Not available yet"
         td = f"style=\"{FONT}font-size:14px;color:{INK};padding:7px 8px 7px 0;border-bottom:1px solid {LINE};vertical-align:top\""
         rows.append(
-            f"<tr><td {td}><b>{e(o['label'])}</b><br><span style=\"font-size:12px;color:{MUTED}\">{e(o['confidence'])} confidence</span></td>"
-            f"<td {td}><span style=\"display:inline-block;background:{color};padding:2px 8px;font-size:12px;font-weight:bold;white-space:nowrap\">{word}</span></td>"
+            f"<tr><td width=\"110\" {td}><b>{e(o['label'])}</b><br><span style=\"font-size:12px;color:{MUTED}\">{e(o['confidence'])} confidence</span></td>"
+            f"<td width=\"135\" {td}><span style=\"display:inline-block;background:{color};padding:2px 8px;font-size:12px;font-weight:bold;white-space:nowrap\">{word}</span></td>"
             f"<td {td}>{e(o['summary'])}</td></tr>")
     return (f"<div style=\"{FONT}font-size:15px;font-weight:bold;color:{INK};margin:22px 0 2px\">What's coming, days 4 to 7</div>"
             f"<div style=\"{FONT}font-size:12px;color:{MUTED};margin-bottom:6px\">Early signals only. Flags and truck checks start once a day is within 3 days.</div>"
