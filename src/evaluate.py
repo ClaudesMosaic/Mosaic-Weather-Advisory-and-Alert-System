@@ -224,6 +224,7 @@ def location_flags(pt, day_start, cfg):
     status = "clear"
     for f in flags:
         status = worse(status, f["level"])
+        f["when"] = f["when"][:1].upper() + f["when"][1:]
     return status, flags, day_summary(hours)
 
 
