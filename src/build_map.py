@@ -88,10 +88,10 @@ def lanes_svg(day, xy):
             if a["id"] not in xy or b["id"] not in xy:
                 continue
             s = a["status"] if RANK[a["status"]] >= RANK[b["status"]] else b["status"]
-            segs.append((RANK[s], s, xy[a["id"]], xy[b["id"]], f"{run['name']}: {a['name']} to {b['name']}, {STATUS_WORD[s].lower()}"))
+            segs.append((RANK[s], s, xy[a["id"]], xy[b["id"]], f"{run['name']}: {a['name']} to {b['name']}, {STATUS_WORD[s].lower()}", run["id"]))
     segs.sort(key=lambda t: t[0])
-    return "".join(f'<path class="lane {s}" d="M{p[0]},{p[1]} L{q[0]},{q[1]}"><title>{e(t)}</title></path>'
-                   for _, s, p, q, t in segs)
+    return "".join(f'<path class="lane {s}" data-run="{rid}" d="M{p[0]},{p[1]} L{q[0]},{q[1]}"><title>{e(t)}</title></path>'
+                   for _, s, p, q, t, rid in segs)
 
 
 def checkpoint_dots(day, cfg, xy, scale=1):
@@ -115,19 +115,19 @@ def loc_marks(cfg, xy, cls_of, tip_of, inset):
             if not in_inset(*project(loc["lat"], loc["lon"])) or k not in INSET_LABELS:
                 continue
             dx, dy, anc = INSET_LABELS[k]
-            out.append(f'<g class="loc {cls}"><title>{e(tip)}</title><circle class="dot" cx="{x}" cy="{y}" r="8"/>'
+            out.append(f'<g class="loc {cls}" data-k="{k}"><title>{e(tip)}</title><circle class="ring" cx="{x}" cy="{y}" r="13"/><circle class="dot" cx="{x}" cy="{y}" r="8"/>'
                        f'<text x="{x + dx}" y="{y + dy}" text-anchor="{anc}">{e(loc["name"])}</text></g>')
             continue
         small = k in INSET_LABELS
         if k == "csc":
-            out.append(f'<g class="loc {cls} csc"><title>{e(tip)}</title><rect x="{x - 12}" y="{y - 12}" width="24" height="24" rx="4"/>'
+            out.append(f'<g class="loc {cls} csc" data-k="{k}"><title>{e(tip)}</title><circle class="ring" cx="{x}" cy="{y}" r="18"/><rect x="{x - 12}" y="{y - 12}" width="24" height="24" rx="4"/>'
                        f'<circle class="dot" cx="{x + 12}" cy="{y - 12}" r="7"/><text class="tag" x="{x}" y="{y + 4}" text-anchor="middle">CSC</text>'
                        f'<text x="{x + 14}" y="{y + 5}">Doswell</text></g>')
         elif small:
-            out.append(f'<g class="loc {cls}"><title>{e(tip)}</title><circle class="dot" cx="{x}" cy="{y}" r="5"/></g>')
+            out.append(f'<g class="loc {cls}" data-k="{k}"><title>{e(tip)}</title><circle class="ring" cx="{x}" cy="{y}" r="9"/><circle class="dot" cx="{x}" cy="{y}" r="5"/></g>')
         else:
             dx, dy, anc = LABELS.get(k, (12, 5, "start"))
-            out.append(f'<g class="loc {cls}"><title>{e(tip)}</title><circle class="dot" cx="{x}" cy="{y}" r="8"/>'
+            out.append(f'<g class="loc {cls}" data-k="{k}"><title>{e(tip)}</title><circle class="ring" cx="{x}" cy="{y}" r="13"/><circle class="dot" cx="{x}" cy="{y}" r="8"/>'
                        f'<text x="{x + dx}" y="{y + dy}" text-anchor="{anc}">{e(loc["name"])}</text></g>')
     return "".join(out)
 
@@ -149,6 +149,38 @@ def map_svg(cfg, inner_main, inner_inset_scaled, inner_inset_marks, label):
 # ----------------------------------------------------------------------
 # Day views
 # ----------------------------------------------------------------------
+def merged_location_line(v):
+    """One line per location: its top-level rules together, plus the main detail."""
+    top = [f for f in v["flags"] if f["level"] == v["status"]]
+    rules, seen = [], set()
+    for f in top:
+        name = f["text"].replace(" in effect.", "") if f["rule"] == "Official alert" else f["rule"]
+        if name not in seen:
+            seen.add(name)
+            rules.append(name)
+    main = next((f for f in top if f["rule"] != "Official alert"), top[0])
+    return ", ".join(rules), f'{main["when"]}. {main["text"]}'
+
+
+def run_line(run):
+    """One line per run: where and when it runs into trouble, and the main reasons."""
+    bad = [p for p in run["points"] if p["status"] == run["status"]]
+    first, last = bad[0], bad[-1]
+    start = first["window"].split(" to ")[0]
+    end = last["window"].split(" to ")[-1]
+    where = first["name"] if first["name"] == last["name"] else f'{first["name"]} to {last["name"]}'
+    why = []
+    for p in bad:
+        for r in p["reasons"]:
+            r = r.lower()
+            if "near the" in r and run["status"] == "flag":
+                continue  # heads-up detail; the stop list has it
+            if r not in why:
+                why.append(r)
+    more = f", and {len(why) - 3} more" if len(why) > 3 else ""
+    return f'{where}, about {start} to {end}: {", ".join(why[:3])}{more}.'
+
+
 def links_html(cfg, k):
     loc = cfg["locations"][k]
     cams = cfg.get("links", {}).get("cameras", {})
@@ -171,24 +203,42 @@ def flag_view(i, day, cfg, xy, xy_in):
 
     items = []
     for k, v in L.items():
-        for f in v["flags"]:
-            items.append((RANK[f["level"]], f'<li class="{f["level"]}"><b>{e(v["name"])}: {e(f["rule"])}</b><small>{e(f["when"])}. {e(f["text"])}</small></li>'))
+        if v["flags"]:
+            rules, detail = merged_location_line(v)
+            items.append((RANK[v["status"]], f'<li class="{v["status"]}" data-k="{k}"><b>{e(v["name"])}: {e(rules)}</b><small>{e(detail)}</small></li>'))
     for run in day["runs"]:
         if run["status"] != "clear":
-            bad = [p for p in run["points"] if p["status"] != "clear"]
-            detail = "; ".join(f'{p["name"]}, {p["window"]}: {", ".join(p["reasons"]).lower()}' for p in bad)
-            items.append((RANK[run["status"]], f'<li class="{run["status"]}"><b>{e(run["name"])} run</b><small>{e(detail)}.</small></li>'))
+            items.append((RANK[run["status"]], f'<li class="{run["status"]}" data-run="{run["id"]}"><b>{e(run["name"])} run</b><small>{e(run_line(run))}</small></li>'))
     items.sort(key=lambda t: -t[0])
     flag_list = (f'<ul class="flaglist">{"".join(h for _, h in items)}</ul>' if items
                  else '<p class="empty">No flags or heads-ups for this day.</p>')
 
-    runs = []
+    runs, dets = [], []
     for run in day["runs"]:
-        steps = "".join(f'<li><span class="pill {p["status"]}">{STATUS_WORD[p["status"]]}</span> {e(p["name"])} <span class="muted">{e(p["window"])}</span></li>'
+        steps = "".join(f'<li><span class="pill {p["status"]}">{STATUS_WORD[p["status"]]}</span> {e(p["name"])} <span class="muted">{e(p["window"])}</span>'
+                        + (f'<br><small class="muted">{e(", ".join(p["reasons"]))}</small>' if p["reasons"] and p["status"] != "clear" else "") + '</li>'
                         for p in run["points"])
-        runs.append(f'<details><summary><span class="pill {run["status"]}">{STATUS_WORD[run["status"]]}</span> '
-                    f'<b>{e(run["name"])}</b> <span class="muted">{e(run["operator"])}, leaves {e(run["depart_label"])}</span></summary>'
-                    f'<ul class="route">{steps}</ul></details>')
+        runs.append(f'<div class="runrow" data-run="{run["id"]}"><span class="pill {run["status"]}">{STATUS_WORD[run["status"]]}</span> '
+                    f'<b>{e(run["name"])}</b> <span class="muted">leaves {e(run["depart_label"])}</span></div>')
+        dets.append(f'<div class="det" data-key="r:{run["id"]}"><button class="back" type="button">Back to the day summary</button>'
+                    f'<h2>{e(run["name"])} <span class="pill {run["status"]}">{STATUS_WORD[run["status"]]}</span></h2>'
+                    f'<p class="muted">{e(run["operator"])}, leaves {e(run["depart_label"])}. Each stop shows when the truck is expected there.</p>'
+                    f'<ul class="route">{steps}</ul></div>')
+    for k, v in L.items():
+        s = v["summary"]
+        fl = "".join(f'<li class="{f["level"]}"><b>{e(f["rule"])}</b><small>{e(f["when"])}. {e(f["text"])}</small></li>' for f in v["flags"])
+        thru = [(run, p) for run in day["runs"] for p in run["points"] if p["id"] == k]
+        thru_html = "".join(f'<li><span class="pill {p["status"]}">{STATUS_WORD[p["status"]]}</span> {e(run["name"])} <span class="muted">{e(p["window"])}</span></li>'
+                            for run, p in thru)
+        hi = "–" if s["high"] is None else f'{s["high"]}°'
+        lo = "–" if s["low"] is None else f'{s["low"]}°'
+        dets.append(f'<div class="det" data-key="k:{k}"><button class="back" type="button">Back to the day summary</button>'
+                    f'<h2>{e(v["name"])} <span class="pill {v["status"]}">{STATUS_WORD[v["status"]]}</span></h2>'
+                    f'<dl class="facts"><dt>Conditions</dt><dd>{e(s["conditions"])}</dd><dt>High / low</dt><dd>{hi} / {lo}</dd>'
+                    f'<dt>Precip chance</dt><dd>{s["pop"]}%</dd><dt>Rain</dt><dd>{s["rain_in"]:.2f}"</dd><dt>Snow</dt><dd>{s["snow_in"]:.1f}"</dd></dl>'
+                    + (f'<h3>Flags</h3><ul class="flaglist">{fl}</ul>' if fl else "")
+                    + (f'<h3>Truck runs through here</h3><ul class="route">{thru_html}</ul>' if thru else "")
+                    + f'<h3>Traffic cameras</h3><p class="lk">{links_html(cfg, k)}</p></div>')
     runs_html = "".join(runs) or '<p class="empty">No truck runs scheduled this day.</p>'
 
     rows = []
@@ -200,12 +250,13 @@ def flag_view(i, day, cfg, xy, xy_in):
                     f'<td class="n">{hi} / {lo}</td><td class="n">{s["pop"]}%</td><td class="n">{s["rain_in"]:.2f}"</td>'
                     f'<td class="n">{s["snow_in"]:.1f}"</td><td class="lk">{links_html(cfg, k)}</td></tr>')
 
-    return (f'<section class="view v{i}"><div class="grid"><div class="col"><div class="mapbox">{map_svg(cfg, main, inset_scaled, inset_marks, "Truck lanes and locations for " + day["label"])}'
+    return (f'<section class="view v{i}"><div class="grid"><div class="col"><div class="mapbox"><div class="tip">&#128070; Click a store or route on the map for additional information</div>{map_svg(cfg, main, inset_scaled, inset_marks, "Truck lanes and locations for " + day["label"])}'
             f'<div class="legend"><span><i class="sw" style="background:var(--flag)"></i>Flagged</span><span><i class="sw" style="background:var(--watch)"></i>Heads-up</span>'
             f'<span><i class="sw" style="background:var(--clear)"></i>Clear</span><span>Lanes are colored stretch by stretch for the hours each truck is expected there. Hover for names.</span></div></div>'
             f'<div class="tablewrap"><table><thead><tr><th>Location</th><th>Conditions</th><th class="n">High / Low</th><th class="n">Precip</th>'
             f'<th class="n">Rain</th><th class="n">Snow</th><th>Traffic cameras</th></tr></thead><tbody>{"".join(rows)}</tbody></table></div></div>'
-            f'<aside class="panel"><h2>{e(day["label"])}</h2>{flag_list}<h3>Truck runs</h3>{runs_html}</aside></div></section>')
+            f'<aside class="panel"><div class="sum"><h2>{e(day["label"])}</h2>{flag_list}<h3>Truck runs</h3>{runs_html}'
+            f'<p class="hint">Click a store, route or flag for additional information.</p></div>{"".join(dets)}</aside></div></section>')
 
 
 def outlook_view(i, o, cfg, xy, xy_in):
@@ -227,6 +278,18 @@ def outlook_view(i, o, cfg, xy, xy_in):
             body = "".join(f'<span><b>{e(names[k])}:</b> {e(L[k]["note"])}</span>' for k in ks)
         groups.append(f'<div class="ogroup"><b class="gh"><i class="osw o-{lv}"></i>{OUT_WORD[lv]}</b>{body}</div>')
 
+    odets = []
+    for k in cfg["locations"]:
+        if k not in L:
+            continue
+        v = L[k]
+        hi = "–" if v["high"] is None else f'{v["high"]}°'
+        lo = "–" if v["low"] is None else f'{v["low"]}°'
+        odets.append(f'<div class="det" data-key="k:{k}"><button class="back" type="button">Back to the day summary</button>'
+                     f'<h2>{e(names[k])}</h2><p><span class="lv {v["level"]}">{OUT_WORD[v["level"]]}</span> {e(v["note"])}</p>'
+                     f'<dl class="facts"><dt>Conditions</dt><dd>{e(v["conditions"])}</dd><dt>High / low</dt><dd>{hi} / {lo}</dd><dt>Precip chance</dt><dd>{v["pop"]}%</dd></dl>'
+                     f'<h3>Traffic cameras</h3><p class="lk">{links_html(cfg, k)}</p></div>')
+
     rows = []
     for k in cfg["locations"]:
         if k not in L:
@@ -237,12 +300,13 @@ def outlook_view(i, o, cfg, xy, xy_in):
         rows.append(f'<tr><td><span class="dotk o-{v["level"]}"></span><b>{e(names[k])}</b></td><td>{e(v["conditions"])}</td>'
                     f'<td class="n">{hi} / {lo}</td><td class="n">{v["pop"]}%</td><td>{e(v["note"])}</td><td class="lk">{links_html(cfg, k)}</td></tr>')
 
-    return (f'<section class="view w{i}"><div class="grid"><div class="col"><div class="mapbox">{map_svg(cfg, main, "", inset_marks, "Outlook for " + o["label"])}'
+    return (f'<section class="view w{i}"><div class="grid"><div class="col"><div class="mapbox"><div class="tip">&#128070; Click a store on the map for additional information</div>{map_svg(cfg, main, "", inset_marks, "Outlook for " + o["label"])}'
             f'<div class="legend"><span><i class="sw" style="background:var(--o-a)"></i>Potential hazard</span><span><i class="sw" style="background:var(--o-y)"></i>Worth watching</span>'
             f'<span><i class="sw" style="background:var(--o-g)"></i>Nothing notable</span><span>Early signals, not flags. Truck lanes appear once a day is within 3 days.</span></div></div>'
             f'<div class="tablewrap"><table><thead><tr><th>Location</th><th>Conditions</th><th class="n">High / Low</th><th class="n">Precip</th><th>Outlook</th><th>Traffic cameras</th></tr></thead>'
             f'<tbody>{"".join(rows)}</tbody></table></div></div>'
-            f'<aside class="panel"><h2>{e(o["label"])} <span class="conf">{e(o["confidence"])} confidence</span></h2><p>{e(o["summary"])}</p>{"".join(groups)}</aside></div></section>')
+            f'<aside class="panel"><div class="sum"><h2>{e(o["label"])} <span class="conf">{e(o["confidence"])} confidence</span></h2><p>{e(o["summary"])}</p>{"".join(groups)}'
+            f'<p class="hint">Click a store for additional information.</p></div>{"".join(odets)}</aside></div></section>')
 
 
 # ----------------------------------------------------------------------
@@ -297,6 +361,7 @@ svg{display:block;width:100%;height:auto}
 .conf{font-size:.75rem;font-weight:600;border:1px solid var(--line);border-radius:4px;padding:0 6px;color:var(--muted);vertical-align:middle}
 .flaglist{list-style:none;margin:0;padding:0}.flaglist li{border-left:4px solid var(--flag);background:var(--flag-soft);padding:7px 10px;margin:0 0 7px;border-radius:0 6px 6px 0}
 .flaglist li.watch{border-color:var(--watch);background:var(--watch-soft)}.flaglist small{display:block;color:var(--muted)}
+.flaglist li b{font-weight:600}
 .empty,.muted{color:var(--muted)}
 details{border-top:1px solid var(--line);padding:6px 0}summary{cursor:pointer}
 .pill{display:inline-block;font-size:.75rem;font-weight:600;border-radius:4px;padding:0 7px;min-width:66px;text-align:center}
@@ -313,6 +378,54 @@ tr.flag td{background:var(--flag-soft)}tr.watch td{background:var(--watch-soft)}
 .dotk.flag{background:var(--flag)}.dotk.watch{background:var(--watch)}.dotk.clear{background:var(--clear)}
 .dotk.o-a{background:var(--o-a)}.dotk.o-y{background:var(--o-y)}.dotk.o-g{background:var(--o-g)}
 footer{color:var(--muted);font-size:.8rem;margin-top:16px}
+.det,.hint,.tip{display:none}
+html.js .tip{display:block;background:var(--clear-soft);color:var(--ink);font-weight:600;font-size:.92rem;padding:8px 12px;border-bottom:1px solid var(--line)}html.js .hint{display:block;font-size:.82rem;color:var(--muted);margin:10px 0 0}
+.panel.open .sum{display:none}.panel.open .det.on{display:block}
+.back{all:unset;cursor:pointer;color:var(--muted);font-size:.88rem;margin-bottom:6px;display:inline-block}.back:hover{color:var(--ink)}
+.facts{display:grid;grid-template-columns:auto 1fr;gap:2px 14px;margin:8px 0 0}.facts dt{color:var(--muted)}.facts dd{margin:0}
+.runrow{padding:5px 0;border-top:1px solid var(--line)}
+.loc .ring{fill:none;stroke:var(--ink);stroke-width:2;opacity:0}.loc.sel .ring{opacity:1}
+html.js .loc,html.js .lane,html.js .flaglist li[data-k],html.js .flaglist li[data-run],html.js .runrow{cursor:pointer}
+html.js .loc:hover .ring{opacity:.5}html.js .runrow:hover,html.js .flaglist li[data-k]:hover,html.js .flaglist li[data-run]:hover{filter:brightness(.97)}
+.lane.dim,.cp.dim{opacity:.12}
+"""
+
+
+SCRIPT = """<script>
+document.documentElement.classList.add("js");
+document.querySelectorAll(".view").forEach(function (v) {
+  var panel = v.querySelector(".panel");
+  function reset() {
+    panel.classList.remove("open");
+    v.querySelectorAll(".det.on").forEach(function (d) { d.classList.remove("on"); });
+    v.querySelectorAll(".sel").forEach(function (x) { x.classList.remove("sel"); });
+    v.querySelectorAll(".dim").forEach(function (x) { x.classList.remove("dim"); });
+  }
+  function show(key) {
+    var d = v.querySelector('.det[data-key="' + key + '"]');
+    if (!d) return;
+    reset();
+    panel.classList.add("open"); d.classList.add("on");
+    var id = key.slice(2);
+    if (key[0] === "k") {
+      v.querySelectorAll('.loc[data-k="' + id + '"]').forEach(function (x) { x.classList.add("sel"); });
+    } else {
+      v.querySelectorAll(".lane").forEach(function (x) { if (x.getAttribute("data-run") !== id) x.classList.add("dim"); });
+    }
+    if (window.innerWidth < 860) panel.scrollIntoView({behavior: "smooth", block: "start"});
+  }
+  v.addEventListener("click", function (ev) {
+    if (ev.target.closest(".back")) { reset(); return; }
+    var t = ev.target.closest("[data-k],[data-run]");
+    if (!t || t.tagName === "A") return;
+    var k = t.getAttribute("data-k");
+    show(k ? "k:" + k : "r:" + t.getAttribute("data-run"));
+  });
+});
+document.addEventListener("keydown", function (ev) {
+  if (ev.key === "Escape") document.querySelectorAll(".panel.open .back").forEach(function (b) { b.click(); });
+});
+</script>
 """
 
 
@@ -381,6 +494,7 @@ def main():
 <header><h1>Mosaic Weather System</h1><p class="sub">Weather map for {gen.strftime('%A, %b ')}{gen.day}, generated {gen.strftime('%I:%M %p').lstrip('0')}.{sig_link}</p>{note}</header>
 {bar}
 <div class="views">{views}</div>
+{SCRIPT}
 <footer>Sources: National Weather Service, with Open-Meteo as backup. Map positions are approximate. Reporting only, not a go or no-go call.</footer>
 </div></body></html>"""
     OUT_PATH.write_text(html, encoding="utf-8")
