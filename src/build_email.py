@@ -50,20 +50,38 @@ def temp(v):
 # Sections
 # ----------------------------------------------------------------------
 def collect_items(flag_days):
-    """Every flag and heads-up for days 1 to 3, locations first, then runs."""
+    """One row per flagged location and one per flagged run, for days 1 to 3."""
     flags, watches = [], []
     for day in flag_days:  # already in date order, so the lists stay in date order
         for v in day["locations"].values():
-            for f in v["flags"]:
-                row = (day["label"], v["name"], f"{f['rule']} ({f['when']}). {f['text']}")
-                (flags if f["level"] == "flag" else watches).append(row)
+            if not v["flags"]:
+                continue
+            top = [f for f in v["flags"] if f["level"] == v["status"]]
+            rules = []
+            for f in top:
+                name = f["text"].replace(" in effect.", "") if f["rule"] == "Official alert" else f["rule"]
+                if name not in rules:
+                    rules.append(name)
+            main = next((f for f in top if f["rule"] != "Official alert"), top[0])
+            row = (day["label"], v["name"], f"{', '.join(rules)}: {main['when']}. {main['text']}")
+            (flags if v["status"] == "flag" else watches).append(row)
         for run in day["runs"]:
             if run["status"] == "clear":
                 continue
             bad = [p for p in run["points"] if p["status"] == run["status"]]
-            stops = "; ".join(f"{p['name']}, {p['window']}: {', '.join(p['reasons']).lower() or 'see forecast'}"
-                              for p in bad)
-            row = (day["label"], f"{run['name']} run", f"Leaves {clock_str(run['depart'])}. {stops}.")
+            start = bad[0]["window"].split(" to ")[0]
+            end = bad[-1]["window"].split(" to ")[-1]
+            where = bad[0]["name"] if bad[0]["name"] == bad[-1]["name"] else f"{bad[0]['name']} to {bad[-1]['name']}"
+            why = []
+            for p in bad:
+                for r in p["reasons"]:
+                    r = r.lower()
+                    if ("near the" in r and run["status"] == "flag") or r in why:
+                        continue
+                    why.append(r)
+            more = f", and {len(why) - 3} more" if len(why) > 3 else ""
+            row = (day["label"], f"{run['name']} run",
+                   f"Leaves {clock_str(run['depart'])}. {where}, about {start} to {end}: {', '.join(why[:3])}{more}.")
             (flags if run["status"] == "flag" else watches).append(row)
     return flags, watches
 
