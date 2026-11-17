@@ -215,9 +215,11 @@ def location_flags(pt, day_start, cfg):
         window = [x for x in pt.between(h["dt"], h["dt"] + timedelta(hours=12))]
         total = sum(x["snow_in"] for x in window)
         if total >= hs["min_inches_12h"] or h["snow_in"] >= hs["min_inches_1h"]:
-            rate = f" Up to {h['snow_in']:.1f}\" in a single hour." if h["snow_in"] >= hs["min_inches_1h"] else ""
+            peak = max(x["snow_in"] for x in window)
+            rate = f" Up to {peak:.1f}\" in a single hour." if peak >= hs["min_inches_1h"] else ""
+            first = next((x for x in window if x["snow_in"] > 0), h)
             flags.append({"level": "flag", "rule": "Heavy snow",
-                          "when": f"Starting around {clock(h['dt'])}",
+                          "when": f"Starting around {clock(first['dt'])}",
                           "text": f"About {total:.1f}\" of snow over the next 12 hours.{rate}"})
             break
 
