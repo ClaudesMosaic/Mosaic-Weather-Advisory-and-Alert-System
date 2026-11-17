@@ -1,5 +1,7 @@
-# Daily 5:30 AM Eastern report, a noon update only when there are flags,
-# and a manual "Run workflow" button.
+# Mosaic Weather System
+#   About 5:30 AM Eastern: daily report (every day)
+#   Noon Eastern: update, only sent when something is flagged
+#   "Run workflow" button: on-demand update
 name: Weather run
 
 on:
@@ -10,6 +12,11 @@ on:
     - cron: "0 17 * * *"    # noon Eastern, standard time
   workflow_dispatch:
 
+# One run at a time, so a late run can never overlap another
+concurrency:
+  group: weather-run
+  cancel-in-progress: false
+
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -17,22 +24,29 @@ jobs:
       - name: Work out which run this is
         id: clock
         run: |
-          HOUR=$(TZ=America/New_York date +%H)
-          if [ "${{ github.event_name }}" != "schedule" ]; then
-            MODE=manual
-          elif [ "$HOUR" = "05" ] || [ "$HOUR" = "06" ]; then
-            MODE=morning
-          elif [ "$HOUR" = "12" ] || [ "$HOUR" = "13" ]; then
-            MODE=noon
-          else
-            MODE=skip
-          fi
+          # Only the trigger that matches the current clock setting counts,
+          # so a run GitHub starts late can't turn into a second email.
+          OFFSET=$(TZ=America/New_York date +%z)
+          if [ "$OFFSET" = "-0400" ]; then MORNING="30 9 * * *"; NOON="0 16 * * *";
+          else MORNING="30 10 * * *"; NOON="0 17 * * *"; fi
+          if [ "${{ github.event_name }}" != "schedule" ]; then MODE=manual
+          elif [ "${{ github.event.schedule }}" = "$MORNING" ]; then MODE=morning
+          elif [ "${{ github.event.schedule }}" = "$NOON" ]; then MODE=noon
+          else MODE=skip; fi
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"
-          echo "Eastern hour is $HOUR, run mode: $MODE"
+          echo "Eastern offset $OFFSET, trigger '${{ github.event.schedule }}', run mode: $MODE"
 
       - name: Get the code
         if: steps.clock.outputs.mode != 'skip'
         uses: actions/checkout@v6
+
+      - name: Load the last report (for "what changed")
+        if: steps.clock.outputs.mode != 'skip'
+        uses: actions/cache/restore@v5
+        with:
+          path: state
+          key: mws-state-${{ github.run_id }}
+          restore-keys: mws-state-
 
       - name: Set up Python
         if: steps.clock.outputs.mode != 'skip'
@@ -50,6 +64,8 @@ jobs:
 
       - name: Apply the rules
         if: steps.clock.outputs.mode != 'skip'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python src/evaluate.py
 
       - name: Build the email
@@ -69,6 +85,21 @@ jobs:
           MWS_FLOW_URL: ${{ secrets.MWS_FLOW_URL }}
           MWS_FLOW_KEY: ${{ secrets.MWS_FLOW_KEY }}
         run: python src/send_email.py
+
+      - name: Save this report for next time
+        if: always() && steps.clock.outputs.mode != 'skip'
+        uses: actions/cache/save@v5
+        with:
+          path: state
+          key: mws-state-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Email an alert if anything failed
+        if: failure() && steps.clock.outputs.mode != 'skip'
+        env:
+          RUN_MODE: ${{ steps.clock.outputs.mode }}
+          MWS_FLOW_URL: ${{ secrets.MWS_FLOW_URL }}
+          MWS_FLOW_KEY: ${{ secrets.MWS_FLOW_KEY }}
+        run: python src/notify_failure.py
 
       - name: Save results for download
         if: always() && steps.clock.outputs.mode != 'skip'
