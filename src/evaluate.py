@@ -20,6 +20,10 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
+import changes
+import summary
+import events as ev_mod
+
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config" / "network.yaml"
 FORECAST_PATH = ROOT / "output" / "forecast.json"
@@ -158,6 +162,41 @@ def day_summary(hours):
 
 
 # ----------------------------------------------------------------------
+# Settings with defaults (all optional in network.yaml)
+# ----------------------------------------------------------------------
+def extra_rules(cfg):
+    r = cfg.get("rules", {})
+    w = r.get("wind", {})
+    rf = r.get("refreeze", {})
+    return {
+        "gust_watch": w.get("heads_up_gust_mph", 40),
+        "gust_flag": w.get("flag_gust_mph", 55),
+        "ice_sig": r.get("ice", {}).get("significant_inches", 0.10),
+        "refreeze_on": rf.get("enabled", True),
+        "refreeze_f": rf.get("max_temp_f", 32),
+        "refreeze_back_h": rf.get("lookback_hours", 24),
+        "refreeze_min_precip": rf.get("min_precip_inches", 0.05),
+    }
+
+
+def wet_before(pt, start, cfg):
+    """Was there meaningful precipitation in the hours before `start`?"""
+    x = extra_rules(cfg)
+    prior = pt.between(start - timedelta(hours=x["refreeze_back_h"]), start)
+    total = sum(h["precip_in"] for h in prior)
+    return total >= x["refreeze_min_precip"] or any(h["snow"] or h["ice"] for h in prior)
+
+
+def refreeze_hours(pt, hours, cfg):
+    """Hours at or below freezing, with no active ice, after a wet stretch."""
+    x = extra_rules(cfg)
+    if not x["refreeze_on"] or not hours:
+        return []
+    cold = [h for h in hours if h["temp_f"] is not None and h["temp_f"] <= x["refreeze_f"] and not h["ice"] and not h["snow"]]
+    return cold if cold and wet_before(pt, cold[0]["dt"], cfg) else []
+
+
+# ----------------------------------------------------------------------
 # Days 1 to 3: location flags
 # ----------------------------------------------------------------------
 def location_flags(pt, day_start, cfg):
@@ -209,6 +248,26 @@ def location_flags(pt, day_start, cfg):
                 flags.append({"level": "watch", "rule": "Near freezing", "when": label,
                               "text": f"Precipitation likely with temperatures near {lo}°. Watch for slick spots."})
 
+    # Refreeze during the AM rush, the morning after rain, snow or ice
+    w = cfg["windows"]["am_rush"]
+    ws = datetime.combine(day_start.date(), parse_hm(w["start"]), day_start.tzinfo)
+    we = datetime.combine(day_start.date(), parse_hm(w["end"]), day_start.tzinfo)
+    rz = refreeze_hours(pt, pt.between(ws, we), cfg)
+    if rz and not any(f["rule"] == "Ice" for f in flags):
+        lo = min(h["temp_f"] for h in rz)
+        flags.append({"level": "watch", "rule": "Refreeze possible", "when": "AM rush",
+                      "text": f"Temperatures down to {lo}° after recent precipitation. Watch for black ice on untreated surfaces."})
+
+    # Wind gusts
+    x = extra_rules(cfg)
+    gusts = [h for h in hours if h.get("gust_mph") is not None and h["gust_mph"] >= x["gust_watch"]]
+    if gusts:
+        top = max(h["gust_mph"] for h in gusts)
+        lvl = "flag" if top >= x["gust_flag"] else "watch"
+        flags.append({"level": lvl, "rule": "High wind" if lvl == "flag" else "Gusty winds",
+                      "when": span(gusts[0]["dt"], gusts[-1]["dt"] + timedelta(hours=1)),
+                      "text": f"Gusts to {top} mph. Use care with high-profile trucks."})
+
     # Heavy snow: 3"+ in any 12 hours, or 1"+ in a single hour
     hs = rules["heavy_snow"]
     for i, h in enumerate(hours):
@@ -256,9 +315,20 @@ def check_point_window(pt, start, end, cfg):
     for a in pt.alerts_between(start, end, alert_events):
         reasons.append(f"{a['event']} in effect")
         status = "flag"
+    x = extra_rules(cfg)
+    top = max((h["gust_mph"] for h in hours if h.get("gust_mph") is not None), default=0)
+    if top >= x["gust_flag"]:
+        reasons.append(f"Gusts to {top} mph")
+        status = "flag"
+    elif top >= x["gust_watch"]:
+        reasons.append(f"Gusts to {top} mph")
+        status = worse(status, "watch")
     if status == "clear" and hu.get("enabled", True):
         if any(h["pop"] >= 40 and h["temp_f"] is not None and h["temp_f"] <= near_f for h in hours):
             reasons.append("Precipitation near freezing")
+            status = "watch"
+        elif refreeze_hours(pt, hours, cfg):
+            reasons.append("Possible refreeze after recent precipitation")
             status = "watch"
     if not hours:
         reasons.append("No forecast data for this time")
@@ -282,7 +352,8 @@ def run_on_day(run, day_start, points, cfg):
                         "reasons": ["Not in forecast data"]})
             return
         st, why = check_point_window(pt, ws, we, cfg)
-        out.append({"id": key, "name": pt.name, "status": st, "window": span(q15(ws), q15(we, True)), "reasons": why})
+        out.append({"id": key, "name": pt.name, "status": st, "window": span(q15(ws), q15(we, True)), "reasons": why,
+                    "start": q15(ws).isoformat(timespec="minutes"), "end": q15(we, True).isoformat(timespec="minutes")})
 
     add(legs[0]["from"], early - pad, late + pad)
     for i, leg in enumerate(legs):
@@ -411,14 +482,56 @@ def main():
                 "level": top, "summary": outlook_summary(ol, names), "locations": ol,
             })
 
+    # Events: one storm, one time span, every location it touches
+    win_start, win_end = today, today + timedelta(days=FLAG_DAYS)
+    x = extra_rules(cfg)
+    spans = {k: ev_mod.point_spans(pt, win_start, win_end, cfg, x, refreeze_hours) for k, pt in points.items()}
+    events = ev_mod.build_events({k: spans[k] for k in locs if k in spans}, cfg)
+    for e in events:
+        e["days"] = [i for i, d in enumerate(flag_days)
+                     if e["start"] < datetime.fromisoformat(d["date"]).replace(tzinfo=tz) + timedelta(days=1)
+                     and e["end"] > datetime.fromisoformat(d["date"]).replace(tzinfo=tz)]
+
+    run_events = []
+    for i, day in enumerate(flag_days):
+        for r in day["runs"]:
+            r["severity"] = None
+            if r["status"] == "clear":
+                continue
+            bad = [p for p in r["points"] if p["status"] == r["status"]]
+            sig = False
+            for p in bad:
+                ps, pe = datetime.fromisoformat(p["start"]), datetime.fromisoformat(p["end"])
+                sig |= any(s["level"] == "flag" and s["severity"] == "significant" and s["start"] < pe and s["end"] > ps
+                           for s in spans.get(p["id"], []))
+            r["severity"] = ("significant" if sig else "minor") if r["status"] == "flag" else None
+            why = []
+            for p in bad:
+                for reason in p["reasons"]:
+                    reason = reason.lower()
+                    if ("near the" in reason and r["status"] == "flag") or reason in why:
+                        continue
+                    why.append(reason)
+            first, last = bad[0], bad[-1]
+            where = first["name"] if first["name"] == last["name"] else f"{first['name']} to {last['name']}"
+            r["trouble"] = {"where": where, "from": first["window"].split(" to ")[0],
+                            "to": last["window"].split(" to ")[-1], "why": why}
+            run_events.append({"day": i, "date": day["date"], "label": day["label"], "id": r["id"], "name": r["name"],
+                               "operator": r["operator"], "depart": r["depart"], "level": r["status"],
+                               "severity": r["severity"], **r["trouble"]})
+
     results = {
         "generated": fc["generated"],
+        "events": [ev_mod.to_json(e) for e in events],
+        "run_events": run_events,
         "timezone": cfg["timezone"],
         "sources_used": fc.get("sources_used", []),
         "missing": fc.get("missing", []),
         "flag_days": flag_days,
         "outlook_days": outlook_days,
     }
+    changes.compare(results, generated)
+    results["bottom_line"], results["bottom_line_by_ai"] = summary.bottom_line(results)
     RESULTS_PATH.write_text(json.dumps(results, indent=1), encoding="utf-8")
 
     # Short readable log for the GitHub run page
@@ -429,6 +542,14 @@ def main():
         print(f"{day['label']}: {len(loc_flags)} location flags, {len(run_flags)} runs flagged")
         for s in loc_flags + [f"Run: {r}" for r in run_flags]:
             print(f"    {s}")
+    print(f"\nBottom line{' (AI)' if results['bottom_line_by_ai'] else ''}: {results['bottom_line']}")
+    print("\nEvents:")
+    for e in events:
+        sev = e["severity"] or "heads-up"
+        print(f"  [{sev}] {e['title']}: {e['regions']} ({', '.join(e['names'])}), {e['when']}. {e['detail']}"
+              + (f" Alerts: {', '.join(e['alerts'])}." if e["alerts"] else ""))
+    for r in run_events:
+        print(f"  [run {r['severity'] or 'heads-up'}] {r['label']} {r['name']}: {r['where']}, {r['from']} to {r['to']}: {', '.join(r['why'])}")
     for o in outlook_days:
         print(f"{o['label']} outlook [{o['level']}] {o['summary']}")
     print(f"\nSaved {RESULTS_PATH.relative_to(ROOT)}")
