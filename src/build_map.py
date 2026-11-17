@@ -54,6 +54,12 @@ CAMERA_NAMES = {"VA": "VDOT 511", "MD": "MD CHART", "NC": "DriveNC"}
 STATUS_WORD = {"flag": "Flagged", "watch": "Heads-up", "clear": "Clear"}
 OUT_WORD = {"a": "Potential hazard", "y": "Worth watching", "g": "Nothing notable"}
 RANK = {"clear": 0, "watch": 1, "flag": 2}
+SEVR = {None: 0, "minor": 1, "significant": 2}
+SEVW = {None: "Heads-up", "minor": "Minor", "significant": "Significant"}
+
+
+def chg(c):
+    return f'<span class="chg {c}">{c.upper()}</span>' if c in ("new", "worse", "better") else ""
 
 
 def e(s):
@@ -193,7 +199,7 @@ def links_html(cfg, k):
     return " ".join(parts)
 
 
-def flag_view(i, day, cfg, xy, xy_in):
+def flag_view(i, day, cfg, xy, xy_in, r):
     L = day["locations"]
     cls_of = lambda k: L[k]["status"]  # noqa: E731
     tip_of = lambda k: f'{L[k]["name"]}: {STATUS_WORD[L[k]["status"]].lower()}'  # noqa: E731
@@ -202,13 +208,22 @@ def flag_view(i, day, cfg, xy, xy_in):
     inset_marks = loc_marks(cfg, xy_in, cls_of, tip_of, True)
 
     items = []
-    for k, v in L.items():
-        if v["flags"]:
-            rules, detail = merged_location_line(v)
-            items.append((RANK[v["status"]], f'<li class="{v["status"]}" data-k="{k}"><b>{e(v["name"])}: {e(rules)}</b><small>{e(detail)}</small></li>'))
-    for run in day["runs"]:
-        if run["status"] != "clear":
-            items.append((RANK[run["status"]], f'<li class="{run["status"]}" data-run="{run["id"]}"><b>{e(run["name"])} run</b><small>{e(run_line(run))}</small></li>'))
+    for ev in r.get("events", []):
+        if i not in ev.get("days", []):
+            continue
+        sev = ev["severity"] if ev["level"] == "flag" else None
+        first = ev["locations"][0]
+        alerts = f' {", ".join(ev["alerts"])} in effect.' if ev.get("alerts") else ""
+        items.append((RANK[ev["level"]] * 10 + SEVR[sev],
+                      f'<li class="{ev["level"]}" data-k="{first}"><span class="sev {sev or "hu"}">{SEVW[sev]}</span>{chg(ev.get("change"))}'
+                      f'<b>{e(ev["title"])}: {e(ev["regions"])}</b><small>{e(ev["when"])}. {e(", ".join(ev["names"]))}. {e(ev["detail"])}{e(alerts)}</small></li>'))
+    for re_ in r.get("run_events", []):
+        if re_["day"] != i:
+            continue
+        sev = re_["severity"] if re_["level"] == "flag" else None
+        items.append((RANK[re_["level"]] * 10 + SEVR[sev],
+                      f'<li class="{re_["level"]}" data-run="{re_["id"]}"><span class="sev {sev or "hu"}">{SEVW[sev]}</span>{chg(re_.get("change"))}'
+                      f'<b>{e(re_["name"])} run</b><small>{e(re_["where"])}, about {e(re_["from"])} to {e(re_["to"])}: {e(", ".join(re_["why"]))}.</small></li>'))
     items.sort(key=lambda t: -t[0])
     flag_list = (f'<ul class="flaglist">{"".join(h for _, h in items)}</ul>' if items
                  else '<p class="empty">No flags or heads-ups for this day.</p>')
@@ -365,6 +380,13 @@ svg{display:block;width:100%;height:auto}
 .empty,.muted{color:var(--muted)}
 details{border-top:1px solid var(--line);padding:6px 0}summary{cursor:pointer}
 .pill{display:inline-block;font-size:.75rem;font-weight:600;border-radius:4px;padding:0 7px;min-width:66px;text-align:center}
+.bl{margin:14px 0 0;padding:10px 14px;border-left:5px solid var(--clear);background:var(--clear-soft);border-radius:0 8px 8px 0;font-size:1.02rem;line-height:1.45}
+.bl.flag{border-color:var(--flag);background:var(--flag-soft)}.bl.watch{border-color:var(--watch);background:var(--watch-soft)}
+.bl span{display:block;font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}.bl small{display:block;color:var(--muted);font-size:.75rem;margin-top:4px}
+.sev{display:inline-block;font-size:.68rem;font-weight:700;padding:1px 6px;margin:0 6px 2px 0;vertical-align:1px;border-radius:3px}
+.sev.significant{background:#c23b2a;color:#fff}.sev.minor{background:#f3c4bb;color:#7a2318}.sev.hu{background:#f4e07a;color:#1c2620}
+.chg{display:inline-block;font-size:.66rem;font-weight:700;padding:1px 5px;margin:0 6px 2px 0;border-radius:3px;color:#fff;background:#1c2620}
+.chg.worse{background:#c23b2a}.chg.better{background:#4d8723}
 .pill.flag{background:var(--flag-soft);color:var(--flag)}.pill.watch{background:var(--watch-soft);color:var(--watch)}.pill.clear{background:var(--clear-soft);color:var(--clear)}
 .route{list-style:none;margin:6px 0 0;padding:0 0 0 4px;border-left:3px solid var(--line)}.route li{padding:2px 0 2px 10px;font-size:.88rem}
 .ogroup{margin:10px 0 0}.ogroup span{display:block;font-size:.9rem;color:var(--muted)}.ogroup span b{color:var(--ink)}
@@ -451,21 +473,25 @@ def main():
               + '<input class="r" type="radio" name="mode" id="vmap" checked><input class="r" type="radio" name="mode" id="vdet">')
 
     def flag_label(i, d):
-        nf = sum(1 for v in d["locations"].values() if v["status"] == "flag") + sum(1 for x in d["runs"] if x["status"] == "flag")
-        txt = f'<small class="f">{nf} flag{"s" if nf != 1 else ""}</small>' if nf else "<small>No flags</small>"
+        nf = sum(1 for x in r.get("events", []) if x["level"] == "flag" and i in x.get("days", [])) + \
+            sum(1 for x in r.get("run_events", []) if x["level"] == "flag" and x["day"] == i)
+        nw = sum(1 for x in r.get("events", []) if x["level"] != "flag" and i in x.get("days", [])) + \
+            sum(1 for x in r.get("run_events", []) if x["level"] != "flag" and x["day"] == i)
+        txt = (f'<small class="f">{nf} flag{"s" if nf != 1 else ""}</small>' if nf
+               else f'<small>{nw} heads-up{"s" if nw != 1 else ""}</small>' if nw else "<small>No flags</small>")
         return f'<label for="d{i}"><b>{e(d["label"])}</b>{txt}</label>'
 
     def out_label(j, o):
         return f'<label for="o{j}"><b>{e(o["label"])}</b><span class="lv {o["level"]}">{OUT_WORD[o["level"]]}</span></label>'
 
-    tot = sum(1 for d in fd for v in d["locations"].values() if v["status"] == "flag") + sum(1 for d in fd for x in d["runs"] if x["status"] == "flag")
+    tot = sum(1 for x in r.get("events", []) + r.get("run_events", []) if x["level"] == "flag")
     top = max((o["level"] for o in od), key={"g": 0, "y": 1, "a": 2}.get, default="g")
     tabs = (f'<div class="rangebar"><label for="r3">Next 3 days{f" <span class=cnt>{tot}</span>" if tot else ""}</label>'
             + (f'<label for="r7">What\'s coming, days 4 to 7{"" if top == "g" else f" <span class=\"lv {top}\">{OUT_WORD[top]}</span>"}</label>' if od else "")
             + '<span class="modes"><label for="vmap">Map</label><label for="vdet">Details</label></span></div>')
     bar = (tabs + f'<div class="days bar3">{"".join(flag_label(i, d) for i, d in enumerate(fd))}</div>'
            + f'<div class="days bar7">{"".join(out_label(j, o) for j, o in enumerate(od))}</div>')
-    views = "".join(flag_view(i, d, cfg, xy, xy_in) for i, d in enumerate(r["flag_days"]))
+    views = "".join(flag_view(i, d, cfg, xy, xy_in, r) for i, d in enumerate(r["flag_days"]))
     views += "".join(outlook_view(j, o, cfg, xy, xy_in) for j, o in enumerate(r["outlook_days"]))
     sel = "border-color:var(--green);box-shadow:inset 0 0 0 1px var(--green)"
     show = ("#r3:checked~.bar3,#r7:checked~.bar7{display:flex}"
@@ -479,6 +505,9 @@ def main():
     show += "".join(f"#{x}:focus-visible~* label[for={x}]{{outline:3px solid var(--brand);outline-offset:2px}}"
                     for x in ["r3", "r7", "vmap", "vdet"] + [f"d{i}" for i in range(len(fd))] + [f"o{j}" for j in range(len(od))])
 
+    worst = ("flag" if any(x["level"] == "flag" for x in r.get("events", []) + r.get("run_events", []))
+             else "watch" if r.get("events") or r.get("run_events") else "clear")
+    ai_note = '<small>Summary written by Claude from the forecast data.</small>' if r.get("bottom_line_by_ai") else ""
     note = f'<p class="note">No forecast available for: {e(", ".join(r["missing"]))}.</p>' if r.get("missing") else ""
     va = cfg.get("links", {}).get("sigalert_va_default", {})
     sig_va = sig_url(cfg, va.get("lat"), va.get("lon"), va.get("zoom")) if va else None
@@ -492,6 +521,7 @@ def main():
 <clipPath id="insclip"><rect x="{INS[0]}" y="{INS[1]}" width="224" height="236" rx="8"/></clipPath></defs></svg>
 <div class="wrap">{radios}
 <header><h1>Mosaic Weather System</h1><p class="sub">Weather map for {gen.strftime('%A, %b ')}{gen.day}, generated {gen.strftime('%I:%M %p').lstrip('0')}.{sig_link}</p>{note}</header>
+<div class="bl {worst}"><span>The bottom line</span>{e(r.get("bottom_line", ""))}{ai_note}</div>
 {bar}
 <div class="views">{views}</div>
 {SCRIPT}
