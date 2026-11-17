@@ -89,6 +89,24 @@ def change_badge(c):
 # ----------------------------------------------------------------------
 # Sections
 # ----------------------------------------------------------------------
+def header_band(heading, gen):
+    """Slate band with the tile mark, matching the weather map page."""
+    shades = ["#65ab19", "#4d8723", "#65ab19", "#4d8723", "#65ab19", "#3c6b1c", "#65ab19", "#3c6b1c", "#4d8723"]
+    cells = "".join(
+        "<tr>" + "".join(f"<td width=\"8\" height=\"8\" style=\"background:{shades[r * 3 + c]};font-size:0;line-height:0\">&nbsp;</td>"
+                         + ("<td width=\"2\" style=\"font-size:0\">&nbsp;</td>" if c < 2 else "") for c in range(3)) + "</tr>"
+        + ("<tr><td colspan=\"5\" height=\"2\" style=\"font-size:0;line-height:0\">&nbsp;</td></tr>" if r < 2 else "")
+        for r in range(3))
+    return (f"<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;background:#16212b\">"
+            f"<tr><td width=\"18\" style=\"padding:14px 0 14px 16px;vertical-align:middle\">"
+            f"<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\">{cells}</table></td>"
+            f"<td style=\"padding:14px 16px 14px 12px;vertical-align:middle\">"
+            f"<div style=\"{FONT}font-size:21px;font-weight:bold;color:#e3eaef;line-height:1.1\">Mosaic Weather System</div>"
+            f"<div style=\"{FONT}font-size:13px;color:#91a3b0;margin-top:3px\">{heading} for {gen.strftime('%A, %b ')}{gen.day}. "
+            f"The weather map is attached.</div></td></tr></table>"
+            f"<div style=\"height:12px;line-height:12px;font-size:0\">&nbsp;</div>")
+
+
 def bottom_line_box(r, worst):
     bar, bg = {"flag": (FLAG_BAR, FLAG_BG), "watch": (WATCH_BAR, WATCH_BG)}.get(worst, (GREEN, CLEAR_BG))
     icon = {"flag": "&#9888;&#65039;", "watch": "&#128993;"}.get(worst, "&#9989;")
@@ -300,8 +318,7 @@ def main():
 <body style="margin:0;padding:0;background:#ffffff">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:16px 10px">
 <table role="presentation" width="680" cellpadding="0" cellspacing="0" style="max-width:680px;width:100%"><tr><td>
-<div style="{FONT}font-size:22px;font-weight:bold;color:{GREEN}">Mosaic Weather System</div>
-<div style="{FONT}font-size:13px;color:{MUTED};margin-bottom:12px">{heading} for {gen.strftime('%A, %b ')}{gen.day}. The weather map is attached.</div>
+{header_band(heading, gen)}
 {note_html}
 {bottom_line_box(r, worst)}
 {body_main}
