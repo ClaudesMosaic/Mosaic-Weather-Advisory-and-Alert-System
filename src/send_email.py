@@ -2,8 +2,15 @@
 Mosaic Weather Advisory and Alert System: hand-off to Power Automate
 
 Reads output/email.json and posts it, with the weather map page attached, to
-your Power Automate flow, which sends the email from your Outlook. The flow's address and a shared key come from
-GitHub secrets (MWS_FLOW_URL and MWS_FLOW_KEY), so they never sit in the code.
+your Power Automate flow, which sends the email from your Outlook. The flow's
+address and a shared key come from GitHub secrets (MWS_FLOW_URL and
+MWS_FLOW_KEY), so they never sit in the code.
+
+Safeguards:
+  - The 6 AM and noon emails go out at most once per day each.
+  - The noon email only goes out when there is at least one flag.
+  - After a successful send, this run's results are saved in state/ so the
+    next report can say what changed.
 
 Run it with:  python src/send_email.py
 """
@@ -13,6 +20,7 @@ import json
 import os
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 import requests
@@ -21,6 +29,16 @@ ROOT = Path(__file__).resolve().parent.parent
 EMAIL_PATH = ROOT / "output" / "email.json"
 MAP_PATH = ROOT / "output" / "weather-map.html"
 RESULTS_PATH = ROOT / "output" / "results.json"
+STATE_DIR = ROOT / "state"
+SENT_PATH = STATE_DIR / "sent.json"
+LAST_PATH = STATE_DIR / "last_results.json"
+
+
+def load_sent():
+    try:
+        return json.loads(SENT_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
 
 
 def main():
@@ -30,36 +48,54 @@ def main():
         print("MWS_FLOW_URL or MWS_FLOW_KEY is not set, so no email was sent.")
         sys.exit(1)
 
-    # The noon run only sends when there's at least one flag in the next 3 days
-    if os.environ.get("RUN_MODE") == "noon":
-        results = json.loads(RESULTS_PATH.read_text(encoding="utf-8"))
-        flagged = any(v["status"] == "flag" for d in results["flag_days"] for v in d["locations"].values()) or \
-            any(x["status"] == "flag" for d in results["flag_days"] for x in d["runs"])
+    mode = os.environ.get("RUN_MODE", "manual")
+    results = json.loads(RESULTS_PATH.read_text(encoding="utf-8"))
+    today = datetime.fromisoformat(results["generated"]).date().isoformat()
+
+    sent = load_sent()
+    if mode in ("morning", "noon") and sent.get(mode) == today:
+        print(f"The {mode} email already went out today, so this run won't send another.")
+        return
+
+    if mode == "noon":
+        flagged = any(x["level"] == "flag" for x in results.get("events", []) + results.get("run_events", []))
         if not flagged:
             print("Noon run: no flags in the next 3 days, so no email today.")
             return
 
     payload = json.loads(EMAIL_PATH.read_text(encoding="utf-8"))
     payload["key"] = key
-
-    # Attach the weather map page, if it was built
+    stamp = results["flag_days"][0]["date"]
     if MAP_PATH.exists():
-        stamp = json.loads(RESULTS_PATH.read_text(encoding="utf-8"))["flag_days"][0]["date"]
         payload["map_name"] = f"MWS Weather Map {stamp}.html"
         payload["map_b64"] = base64.b64encode(MAP_PATH.read_bytes()).decode("ascii")
     else:
-        payload["map_name"], payload["map_b64"] = "", ""
+        payload["map_name"] = f"MWS note {stamp}.txt"
+        payload["map_b64"] = base64.b64encode(b"The weather map could not be built for this run.").decode("ascii")
 
     last = None
     for attempt in range(3):
         try:
-            r = requests.post(url, json=payload, timeout=60)
+            r = requests.post(url, json=payload, timeout=90)
+        except requests.ConnectionError as e:
+            last = str(e)  # never reached the flow, safe to retry
+        except requests.Timeout:
+            # The flow may have received it and still be sending, so don't
+            # risk a duplicate email by retrying.
+            print("Power Automate didn't answer in time. The email may still arrive; not retrying.")
+            sys.exit(1)
+        else:
             if 200 <= r.status_code < 300:
                 print(f"Handed off to Power Automate (HTTP {r.status_code}): {payload['subject']}")
+                STATE_DIR.mkdir(exist_ok=True)
+                if mode in ("morning", "noon"):
+                    sent[mode] = today
+                    SENT_PATH.write_text(json.dumps(sent), encoding="utf-8")
+                LAST_PATH.write_text(json.dumps(results), encoding="utf-8")
                 return
             last = f"HTTP {r.status_code}: {r.text[:300]}"
-        except requests.RequestException as e:
-            last = str(e)
+            if r.status_code < 500 and r.status_code != 429:
+                break  # a wrong key or URL won't fix itself
         time.sleep(10 * (attempt + 1))
     print(f"Power Automate did not accept the email. Last response: {last}")
     sys.exit(1)
