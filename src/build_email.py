@@ -40,11 +40,13 @@ FLAG_BG, FLAG_BAR, FLAG_TXT = "#fbe5e1", "#c23b2a", "#9b2c1e"
 WATCH_BG, WATCH_BAR = "#fbf3cf", "#c9a400"
 MINOR_BG, MINOR_BAR = "#fdebd9", "#e07a1f"
 CLEAR_BG = "#e7f1dc"
+# Severity badges: (fill, text, label, border). Light fills with dark text read clearly in every mail app.
 SEV_BADGE = {"significant": ("#c23b2a", "#ffffff", "Significant"),
-             "minor": ("#f39a4a", "#3d1d00", "Minor"),
-             None: ("#f4e07a", "#1c2620", "Heads-up")}
+             "minor": ("#fcd9b6", "#7a3500", "Minor"),
+             None: ("#fbefb4", "#5c4a00", "Heads-up")}
+SEV_BORDER = {"#c23b2a": "#c23b2a", "#fcd9b6": "#e07a1f", "#fbefb4": "#c9a400", "#dcefc8": "#7fb24a"}
 CHANGE_BADGE = {"new": ("#1c2620", "NEW"), "worse": ("#c23b2a", "WORSE"), "better": ("#4d8723", "BETTER")}
-OUTLOOK = {"a": ("#f6b46a", "Potential hazard"), "y": ("#f4e07a", "Worth watching"), "g": ("#c6e5a6", "Nothing notable")}
+OUTLOOK = {"a": ("#fcd9b6", "Potential hazard"), "y": ("#fbefb4", "Worth watching"), "g": ("#dcefc8", "Nothing notable")}
 STATE_NAMES = {"VA": "Virginia", "MD": "Maryland", "NC": "North Carolina", "DC": "Washington, DC", "DE": "Delaware", "WV": "West Virginia"}
 FONT = "font-family:Arial,Helvetica,sans-serif;"
 TABLE = "role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;table-layout:fixed\""
@@ -78,8 +80,17 @@ def short_when(start_iso, end_iso):
 
 
 def badge(bg, fg, text):
-    return (f"<span style=\"display:inline-block;background:{bg};color:{fg};{FONT}font-size:11px;font-weight:bold;"
+    """Inline badge (NEW / WORSE / BETTER)."""
+    return (f"<span style=\"display:inline-block;background:{bg};color:{fg};border:1px solid {bg};{FONT}font-size:11px;font-weight:bold;"
             f"padding:2px 7px;white-space:nowrap\">{e(text)}</span>")
+
+
+def sev_badge(bg, fg, text):
+    """Severity badge in its own cell. A table keeps the padding in desktop Outlook."""
+    bd = SEV_BORDER.get(bg, bg)
+    return (f"<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr>"
+            f"<td style=\"background:{bg};border:1px solid {bd};padding:3px 9px;{FONT}font-size:12px;font-weight:bold;color:{fg};white-space:nowrap\">"
+            f"{e(text)}</td></tr></table>")
 
 
 def change_badge(c):
@@ -142,7 +153,7 @@ def events_table(events):
         where = ev["regions"] if ev["regions"] in ("the whole network", "most of the network") else ev["regions"]
         alerts = f" {', '.join(ev['alerts'])} in effect." if ev.get("alerts") else ""
         rows.append(
-            f"<tr><td width=\"100\" {td}>{badge(bg, fg, word)}</td>"
+            f"<tr><td width=\"100\" {td}>{sev_badge(bg, fg, word)}</td>"
             f"<td {td}>{change_badge(ev.get('change'))}<b>{e(ev['title'])}: {e(where)}</b><br>"
             f"<span style=\"font-size:13px;color:{MUTED}\">{e(summary.where_text(ev))}{e(ev['detail'])}{e(alerts)}</span>{notes_line(ev.get('notes'))}</td>"
             f"<td width=\"160\" {td}>{e(ev['when'])}</td></tr>")
@@ -179,7 +190,7 @@ def runs_table(run_events):
     for r in run_events:
         bg, fg, word = SEV_BADGE[r["severity"] if r["level"] == "flag" else None]
         rows.append(
-            f"<tr><td width=\"100\" {td}>{badge(bg, fg, word)}</td>"
+            f"<tr><td width=\"100\" {td}>{sev_badge(bg, fg, word)}</td>"
             f"<td {td}>{change_badge(r.get('change'))}<b>{e(r['label'].split(',')[0])} {e(r['name'])}</b>"
             f" <span style=\"color:{MUTED}\">leaves {e(clock_str(r['depart']))}</span><br>"
             f"<span style=\"font-size:13px;color:{MUTED}\">{e(r['where'])}, about {e(r['from'])} to {e(r['to'])}: {e(', '.join(r['why']))}.</span></td></tr>")
@@ -331,7 +342,7 @@ def days_list(r, first, outlook_days, title):
         text = (names + ". " if names else "") + day_line(day)
         rows.append(
             f"<tr><td width=\"110\" {td}><b>{e(day['label'])}</b></td>"
-            f"<td width=\"135\" {td}><span style=\"display:inline-block;background:{color};color:{fg};padding:2px 8px;font-size:12px;font-weight:bold;white-space:nowrap\">{word}</span></td>"
+            f"<td width=\"135\" {td}>{sev_badge(color, fg, word)}</td>"
             f"<td {td}>{e(text)}</td></tr>")
     for o in outlook_days:
         color, word = OUTLOOK[o["level"]]
@@ -339,7 +350,7 @@ def days_list(r, first, outlook_days, title):
             color, word = "#e1e6df", "Not available yet"
         rows.append(
             f"<tr><td width=\"110\" {td}><b>{e(o['label'])}</b><br><span style=\"font-size:12px;color:{MUTED}\">{e(o['confidence'])} confidence</span></td>"
-            f"<td width=\"135\" {td}><span style=\"display:inline-block;background:{color};color:{INK};padding:2px 8px;font-size:12px;font-weight:bold;white-space:nowrap\">{word}</span></td>"
+            f"<td width=\"135\" {td}>{sev_badge(color, INK, word)}</td>"
             f"<td {td}>{e(o['summary'])}</td></tr>")
     if not rows:
         return ""
