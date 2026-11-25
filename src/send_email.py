@@ -7,8 +7,9 @@ address and a shared key come from GitHub secrets (MWS_FLOW_URL and
 MWS_FLOW_KEY), so they never sit in the code.
 
 Safeguards:
-  - The 6 AM and noon emails go out at most once per day each.
-  - The noon email only goes out when there is at least one flag.
+  - The 6 AM briefing goes out at most once per day.
+  - The 9 AM, noon, 3 PM, 6 PM and 9 PM checks only send an email when
+    something changed since the last email (see changes.py).
   - After a successful send, this run's results are saved in state/ so the
     next report can say what changed.
 
@@ -53,15 +54,18 @@ def main():
     today = datetime.fromisoformat(results["generated"]).date().isoformat()
 
     sent = load_sent()
-    if mode in ("morning", "noon") and sent.get(mode) == today:
-        print(f"The {mode} email already went out today, so this run won't send another.")
+    slot = os.environ.get("RUN_SLOT", "")
+    if mode == "morning" and sent.get("morning") == today:
+        print("The 6 AM briefing already went out today, so this run won't send another.")
         return
-
-    if mode == "noon":
-        flagged = any(x["level"] == "flag" for x in results.get("events", []) + results.get("run_events", []))
-        if not flagged:
-            print("Noon run: no flags in the next 3 days, so no email today.")
+    if mode == "check":
+        if sent.get(f"check {slot}") == today:
+            print(f"The {slot} update already went out today.")
             return
+        if not results.get("changes"):
+            print(f"{slot} check: nothing changed since the last email, so no email.")
+            return
+        print(f"{slot} check: {len(results['changes'])} change(s) since the last email, sending an update.")
 
     payload = json.loads(EMAIL_PATH.read_text(encoding="utf-8"))
     payload["key"] = key
@@ -88,8 +92,8 @@ def main():
             if 200 <= r.status_code < 300:
                 print(f"Handed off to Power Automate (HTTP {r.status_code}): {payload['subject']}")
                 STATE_DIR.mkdir(exist_ok=True)
-                if mode in ("morning", "noon"):
-                    sent[mode] = today
+                if mode in ("morning", "check"):
+                    sent["morning" if mode == "morning" else f"check {slot}"] = today
                     SENT_PATH.write_text(json.dumps(sent), encoding="utf-8")
                 LAST_PATH.write_text(json.dumps(results), encoding="utf-8")
                 return
