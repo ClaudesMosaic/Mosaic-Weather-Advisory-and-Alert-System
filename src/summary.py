@@ -82,30 +82,27 @@ def lines(text):
 
 
 def rule_based(results):
+    """Locations only. Truck runs have their own section of the email."""
     flags = [e for e in results["events"] if e["level"] == "flag"]
     watches = [e for e in results["events"] if e["level"] != "flag"]
-    runs = [r for r in results["run_events"] if r["level"] == "flag"]
+    runs_flagged = any(r["level"] == "flag" for r in results["run_events"])
     parts = []
-    if not flags and not runs:
+    if not flags:
         if watches:
-            parts.append("No weather flags in the next 3 days.")
+            parts.append("No weather flags for any location in the next 3 days.")
             parts.append("Worth knowing: " + "; ".join(f"{lower_first(e['title'])} for {e['regions']}, {e['when']}" for e in watches[:2]) + ".")
         else:
-            parts.append("No weather concerns for any location or truck run in the next 3 days.")
+            parts.append("No weather concerns for any location in the next 3 days.")
+        if runs_flagged:
+            parts.append("Some truck runs are flagged; see Truck runs below.")
     else:
         for e in flags[:3]:
             parts.append(event_sentence(e))
         if len(flags) > 3:
             parts.append(f"Plus {len(flags) - 3} more event{'s' if len(flags) > 4 else ''}, listed below.")
-        if runs:
-            names = []
-            for r in runs:
-                n = f"{r['label'].split(',')[0]} {r['name']}"
-                if n not in names:
-                    names.append(n)
-            parts.append("Truck runs affected: " + ", ".join(names) + ".")
-    if results.get("cleared"):
-        parts.append("No longer expected: " + "; ".join(f"{c['title']}{' for ' + c['regions'] if c['regions'] else ''}, {c['when']}" for c in results["cleared"][:3]) + ".")
+    cleared = [c for c in results.get("cleared", []) if c["regions"]]  # locations only; runs have no region
+    if cleared:
+        parts.append("No longer expected: " + "; ".join(f"{c['title']} for {c['regions']}, {c['when']}" for c in cleared[:3]) + ".")
     return " ".join(parts)
 
 
@@ -113,20 +110,18 @@ def facts_for_ai(results):
     keep = ("title", "level", "severity", "regions", "names", "when", "detail", "alerts", "change")
     return {
         "events": [{k: e.get(k) for k in keep} for e in results["events"]],
-        "truck_runs": [{k: r.get(k) for k in ("label", "name", "level", "severity", "where", "from", "to", "why", "change")}
-                       for r in results["run_events"]],
         "no_longer_expected": results.get("cleared", []),
     }
 
 
 PROMPT = """You write the opening summary of a daily weather report for a tile distributor's \
-logistics manager. It covers 9 stores, a distribution center (the CSC in Doswell, VA) and overnight \
-truck runs in Virginia, Maryland and North Carolina.
+logistics manager. It covers 9 stores and a distribution center (the CSC in Doswell, VA) in Virginia, \
+Maryland and North Carolina.
 
 Rewrite the draft as short, plain sentences a busy manager can read in 10 seconds, one sentence per \
-weather event and one for the truck runs; each sentence will be shown on its own line. Lead with the \
+weather event; each sentence will be shown on its own line. Lead with the \
 most serious item and say what it is (for example high wind, ice, heavy snow or a flood watch), where and \
-when. Mention affected truck runs by name only. Use only the facts \
+when. Do not mention truck runs; they are reported separately. Use only the facts \
 given; never add numbers, places, times or advice that are not in them. This is reporting only, so do \
 not recommend closing, delaying or cancelling anything. Do not use em dashes. Reply with the summary \
 text only.
