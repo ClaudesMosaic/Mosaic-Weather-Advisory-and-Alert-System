@@ -1,16 +1,38 @@
-# Mosaic Weather System
-#   About 5:30 AM Eastern: daily report (every day)
-#   Noon Eastern: update, only sent when something is flagged
-#   "Run workflow" button: on-demand update
+# Mosaic Weather System, every day including weekends
+#   5:30 AM Eastern: full daily briefing (always sent)
+#   9 AM, noon, 3 PM, 6 PM, 9 PM: checks that email only if a flag changed
+#     since the last email (new, worse, eased, dropped, amounts, rush-hour
+#     timing, official alerts)
+#   "Run workflow" button: preview only by default (builds everything, sends
+#   nothing); choose "Send to everyone" to send an on-demand update
+#
+# GitHub schedules run on UTC, which ignores daylight saving, so each time
+# has two triggers. Only the one matching the current Eastern clock counts.
 name: Weather run
 
 on:
   schedule:
-    - cron: "30 9 * * *"    # 5:30 AM Eastern, daylight saving time
-    - cron: "30 10 * * *"   # 5:30 AM Eastern, standard time
-    - cron: "0 16 * * *"    # noon Eastern, daylight saving time
-    - cron: "0 17 * * *"    # noon Eastern, standard time
+    - cron: "30 9 * * *"    # 5:30 AM briefing, daylight saving time
+    - cron: "30 10 * * *"   # 5:30 AM briefing, standard time
+    - cron: "0 13 * * *"    # 9 AM check, daylight saving time
+    - cron: "0 14 * * *"    # 9 AM check, standard time
+    - cron: "0 16 * * *"    # noon check, daylight saving time
+    - cron: "0 17 * * *"    # noon check, standard time
+    - cron: "0 19 * * *"    # 3 PM check, daylight saving time
+    - cron: "0 20 * * *"    # 3 PM check, standard time
+    - cron: "0 22 * * *"    # 6 PM check, daylight saving time
+    - cron: "0 23 * * *"    # 6 PM check, standard time
+    - cron: "0 1 * * *"     # 9 PM check, daylight saving time
+    - cron: "0 2 * * *"     # 9 PM check, standard time
   workflow_dispatch:
+    inputs:
+      delivery:
+        description: "What to do with the report"
+        type: choice
+        options:
+          - "Preview only, no email"
+          - "Send to everyone"
+        default: "Preview only, no email"
 
 # One run at a time, so a late run can never overlap another
 concurrency:
@@ -27,14 +49,19 @@ jobs:
           # Only the trigger that matches the current clock setting counts,
           # so a run GitHub starts late can't turn into a second email.
           OFFSET=$(TZ=America/New_York date +%z)
-          if [ "$OFFSET" = "-0400" ]; then MORNING="30 9 * * *"; NOON="0 16 * * *";
-          else MORNING="30 10 * * *"; NOON="0 17 * * *"; fi
-          if [ "${{ github.event_name }}" != "schedule" ]; then MODE=manual
-          elif [ "${{ github.event.schedule }}" = "$MORNING" ]; then MODE=morning
-          elif [ "${{ github.event.schedule }}" = "$NOON" ]; then MODE=noon
-          else MODE=skip; fi
+          case "$OFFSET|${{ github.event.schedule }}" in
+            "-0400|30 9 * * *"|"-0500|30 10 * * *") MODE=morning; SLOT="6 AM" ;;
+            "-0400|0 13 * * *"|"-0500|0 14 * * *")  MODE=check; SLOT="9 AM" ;;
+            "-0400|0 16 * * *"|"-0500|0 17 * * *")  MODE=check; SLOT="noon" ;;
+            "-0400|0 19 * * *"|"-0500|0 20 * * *")  MODE=check; SLOT="3 PM" ;;
+            "-0400|0 22 * * *"|"-0500|0 23 * * *")  MODE=check; SLOT="6 PM" ;;
+            "-0400|0 1 * * *"|"-0500|0 2 * * *")    MODE=check; SLOT="9 PM" ;;
+            *) MODE=skip; SLOT="" ;;
+          esac
+          if [ "${{ github.event_name }}" != "schedule" ]; then MODE=manual; SLOT=""; fi
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"
-          echo "Eastern offset $OFFSET, trigger '${{ github.event.schedule }}', run mode: $MODE"
+          echo "slot=$SLOT" >> "$GITHUB_OUTPUT"
+          echo "Eastern offset $OFFSET, trigger '${{ github.event.schedule }}', run mode: $MODE $SLOT"
 
       - name: Get the code
         if: steps.clock.outputs.mode != 'skip'
@@ -72,16 +99,47 @@ jobs:
         if: steps.clock.outputs.mode != 'skip'
         env:
           RUN_MODE: ${{ steps.clock.outputs.mode }}
+          RUN_SLOT: ${{ steps.clock.outputs.slot }}
         run: python src/build_email.py
 
       - name: Build the weather map
         if: steps.clock.outputs.mode != 'skip'
         run: python src/build_map.py
 
-      - name: Send the email through Power Automate
+      - name: Show the preview on this page
         if: steps.clock.outputs.mode != 'skip'
+        run: |
+          python - <<'EOF'
+          import json, os
+          email = json.load(open("output/email.json", encoding="utf-8"))
+          res = json.load(open("output/results.json", encoding="utf-8"))
+          sending = os.environ["GITHUB_EVENT_NAME"] == "schedule" or os.environ.get("DELIVERY") == "Send to everyone"
+          changes = res.get("changes", [])
+          lines = [
+              "## Mosaic Weather System",
+              "**Email:** " + ("being sent if warranted" if sending else "preview only, nothing sent"),
+              "",
+              "**Subject:** " + email["subject"],
+              "",
+              "**Bottom line:** " + res.get("bottom_line", ""),
+              "",
+              f"**Changes since the last email:** {len(changes)}"
+              + (" (a check at this time would send an update)" if changes else " (a check at this time would stay quiet)"),
+          ] + [f"- {c['phrase']} ({c['when']})" for c in changes] + [
+              "",
+              "To see the full email and map, download **weather-run** at the bottom of this page "
+              "and open email.html and weather-map.html.",
+          ]
+          open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8").write("\n".join(lines) + "\n")
+          EOF
+        env:
+          DELIVERY: ${{ inputs.delivery }}
+
+      - name: Send the email through Power Automate
+        if: steps.clock.outputs.mode != 'skip' && (github.event_name == 'schedule' || inputs.delivery == 'Send to everyone')
         env:
           RUN_MODE: ${{ steps.clock.outputs.mode }}
+          RUN_SLOT: ${{ steps.clock.outputs.slot }}
           MWS_FLOW_URL: ${{ secrets.MWS_FLOW_URL }}
           MWS_FLOW_KEY: ${{ secrets.MWS_FLOW_KEY }}
         run: python src/send_email.py
@@ -94,7 +152,7 @@ jobs:
           key: mws-state-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Email an alert if anything failed
-        if: failure() && steps.clock.outputs.mode != 'skip'
+        if: failure() && github.event_name == 'schedule' && steps.clock.outputs.mode != 'skip'
         env:
           RUN_MODE: ${{ steps.clock.outputs.mode }}
           MWS_FLOW_URL: ${{ secrets.MWS_FLOW_URL }}
