@@ -19,11 +19,14 @@ Run it with:  python src/build_map.py
 
 import json
 import math
+import re
 from datetime import datetime
 from html import escape
 from pathlib import Path
 
 import yaml
+
+import summary
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config" / "network.yaml"
@@ -76,9 +79,9 @@ LABEL_POS = {
     "raleigh": (14, 5, "start"), "greensboro": (0, -14, "middle"),
 }
 CAMERA_NAMES = {"VA": "VDOT 511", "MD": "MD CHART", "NC": "DriveNC"}
-STATUS_WORD = {"flag": "Flagged", "watch": "Heads-up", "clear": "Clear", "idle": "No trucks"}
+STATUS_WORD = {"flag": "Significant", "minor": "Minor", "watch": "Heads-up", "clear": "Clear", "idle": "No trucks"}
 OUT_WORD = {"a": "Potential hazard", "y": "Worth watching", "g": "Nothing notable"}
-RANK = {"idle": -1, "clear": 0, "watch": 1, "flag": 2}
+RANK = {"idle": -1, "clear": 0, "watch": 1, "minor": 1.5, "flag": 2}
 SEVR = {None: 0, "minor": 1, "significant": 2}
 SEVW = {None: "Heads-up", "minor": "Minor", "significant": "Significant"}
 
@@ -454,7 +457,7 @@ def flag_view(i, day, cfg, xy, r, mp):
         sev = ev["severity"] if ev["level"] == "flag" else None
         alerts = f' {", ".join(ev["alerts"])} in effect.' if ev.get("alerts") else ""
         items.append((RANK[ev["level"]] * 10 + SEVR[sev],
-                      f'<li class="{ev["level"]}" data-k="{ev["locations"][0]}"><div class="tags"><span class="sev {sev or "hu"}">{SEVW[sev]}</span>{chg(ev.get("change"))}<span class="ics">{event_icons(ev)}</span></div>'
+                      f'<li class="{ev["level"]}{" minor" if sev == "minor" else ""}" data-k="{ev["locations"][0]}"><div class="tags"><span class="sev {sev or "hu"}">{SEVW[sev]}</span>{chg(ev.get("change"))}<span class="ics">{event_icons(ev)}</span></div>'
                       f'<b>{e(ev["title"])}: {e(ev["regions"])}</b><small class="when">{e(ev["when"])}</small>'
                       f'<small>{e(", ".join(ev["names"]))}. {e(ev["detail"])}{e(alerts)}</small></li>'))
     for re_ in r.get("run_events", []):
@@ -462,7 +465,7 @@ def flag_view(i, day, cfg, xy, r, mp):
             continue
         sev = re_["severity"] if re_["level"] == "flag" else None
         items.append((RANK[re_["level"]] * 10 + SEVR[sev],
-                      f'<li class="{re_["level"]}" data-run="{re_["id"]}"><div class="tags"><span class="sev {sev or "hu"}">{SEVW[sev]}</span>{chg(re_.get("change"))}<span class="ics">{icons_for(re_["why"])}</span></div>'
+                      f'<li class="{re_["level"]}{" minor" if sev == "minor" else ""}" data-run="{re_["id"]}"><div class="tags"><span class="sev {sev or "hu"}">{SEVW[sev]}</span>{chg(re_.get("change"))}<span class="ics">{icons_for(re_["why"])}</span></div>'
                       f'<b>{e(re_["name"])} run</b><small class="when">About {e(re_["from"])} to {e(re_["to"])}</small>'
                       f'<small>{e(re_["where"])}: {e(", ".join(re_["why"]))}.</small></li>'))
     items.sort(key=lambda t: -t[0])
@@ -508,7 +511,8 @@ def flag_view(i, day, cfg, xy, r, mp):
                     f'<h2>{e(cp["name"])}</h2><p><span class="pill {s}">{STATUS_WORD[s]}</span> <span class="muted">Route checkpoint</span></p>'
                     f'<p class="muted small">Checked for the hours each truck is expected to pass.</p>{body}'
                     f'<h3>Traffic cameras</h3><p class="lk">{links_html(cfg, k)}</p></div>')
-    runs_html = "".join(runs) or '<p class="empty">No truck runs scheduled this day.</p>'
+    runs_html = "".join(runs) or ('<p class="empty">No truck runs this day (holiday schedule).</p>' if day.get("no_runs")
+                                  else '<p class="empty">No truck runs scheduled this day.</p>')
 
     # Board: tiles and corridors
     board = []
@@ -530,7 +534,7 @@ def flag_view(i, day, cfg, xy, r, mp):
         st = worst([L[k]["status"] for k in ks])
         evs = sorted({id(x): x for k in ks for x in store_events(r, i, k)}.values(),
                      key=lambda x: (-RANK[x["level"]], -SEVR[x["severity"]]))
-        nflag = sum(1 for k in ks if L[k]["status"] == "flag")
+        nflag = sum(1 for k in ks if L[k]["status"] in ("flag", "minor"))
         line = (f'<span class="rc-line">{e(evs[0]["title"])}, {e(evs[0]["when"])}</span>' if evs
                 else '<span class="rc-line muted">No concerns this day</span>')
         count = f'<span class="rc-count">{nflag} of {len(ks)} stores flagged</span>' if nflag else ""
@@ -609,14 +613,14 @@ CSS = """
 --bg:#16212b;--grout:#0e161d;--tile:#1d2b37;--tile-2:#23344293;--raise:#26394a;
 --text:#e3eaef;--muted:#91a3b0;--faint:#5f7483;--line:#2d4252;
 --water:#13202a;--land:#1a2832;--ours:#22333f;--border:#3b5263;
---flag:#f0564a;--flag-soft:#3a2224;--watch:#f0a93a;--watch-soft:#3a3020;
+--flag:#f0564a;--flag-soft:#3a2224;--minor:#f28a3a;--minor-soft:#3a2a1c;--watch:#e8c547;--watch-soft:#34301b;
 --clear:#7cbd2c;--clear-soft:#1f3420;--idle:#5f7483;--brand:#65ab19;
 --o-g:#9fcf7a;--o-y:#e9cf5a;--o-a:#f2a35c;--focus:#b8ff35;color-scheme:dark}
 :root[data-theme="light"]{
 --bg:#e9eef1;--grout:#c9d3da;--tile:#ffffff;--tile-2:#f4f7f9;--raise:#eef3f6;
 --text:#15212b;--muted:#566874;--faint:#8a9aa6;--line:#d6dee4;
 --water:#dce7ed;--land:#e9eef1;--ours:#ffffff;--border:#b6c4ce;
---flag:#c8322a;--flag-soft:#fbe5e1;--watch:#a8650a;--watch-soft:#fbf0d8;
+--flag:#c8322a;--flag-soft:#fbe5e1;--minor:#c9600f;--minor-soft:#fdebd9;--watch:#a88a00;--watch-soft:#fbf3cf;
 --clear:#4d8723;--clear-soft:#e7f1dc;--idle:#8a9aa6;--brand:#4d8723;
 --o-g:#9fcf7a;--o-y:#e2c13c;--o-a:#ef9a4c;--focus:#4d8723;color-scheme:light}
 *{box-sizing:border-box}
@@ -636,6 +640,8 @@ html.js .theme{display:inline-block}
 .note{color:var(--flag);font-size:.9rem;margin:6px 0 0}
 .bl{margin:16px 0 0;padding:14px 18px;background:var(--tile);border-left:6px solid var(--clear);border-radius:0 8px 8px 0;font-size:1.15rem;line-height:1.45;font-weight:600}
 .bl.flag{border-color:var(--flag)}.bl.watch{border-color:var(--watch)}
+.minor{--flag:var(--minor);--flag-soft:var(--minor-soft)}
+.bl .ln{display:block}.bl .ln+.ln{margin-top:2px}
 .bl small{display:block;color:var(--muted);font-size:.78rem;font-weight:400;margin-top:6px}
 input.r{position:absolute;opacity:0;pointer-events:none}
 .rangebar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:18px 0 12px}
@@ -906,6 +912,17 @@ def main():
             t = datetime.strptime(run["depart"], "%H:%M")
             run["depart_label"] = t.strftime("%I:%M %p").lstrip("0").replace(":00 ", " ")
 
+    # Minor flags get their own color: turn "flag" into "minor" where everything behind it is minor
+    summary.mark_severity(r)
+    for day in r["flag_days"]:
+        for v in day["locations"].values():
+            if v.get("status") == "flag" and v.get("sev") == "minor":
+                v["status"] = "minor"
+        for run in day["runs"]:
+            for x in [run] + run["points"]:
+                if x.get("status") == "flag" and x.get("sev") == "minor":
+                    x["status"] = "minor"
+
     fd, od = r["flag_days"], r["outlook_days"]
     radios = ('<input class="r" type="radio" name="range" id="r3" checked><input class="r" type="radio" name="range" id="r7">'
               + "".join(f'<input class="r" type="radio" name="fday" id="d{i}"{" checked" if i == 0 else ""}>' for i in range(len(fd)))
@@ -950,8 +967,11 @@ def main():
     show += "".join(f"#{x}:focus-visible~* label[for={x}]{{outline:2px solid var(--focus);outline-offset:2px}}"
                     for x in ["r3", "r7", "vmap", "vdet"] + [f"d{i}" for i in range(len(fd))] + [f"o{j}" for j in range(len(od))])
 
-    status = ("flag" if any(x["level"] == "flag" for x in r.get("events", []) + r.get("run_events", []))
-              else "watch" if r.get("events") or r.get("run_events") else "clear")
+    allx = r.get("events", []) + r.get("run_events", [])
+    status = ("flag" if any(x["level"] == "flag" and x.get("severity") != "minor" for x in allx)
+              else "flag minor" if any(x["level"] == "flag" for x in allx)
+              else "watch" if allx else "clear")
+    bl_html = "".join(f'<span class="ln">{e(x)}</span>' for x in summary.lines(r.get("bottom_line", "")))
     ai_note = '<small>Summary written by Claude from the forecast data.</small>' if r.get("bottom_line_by_ai") else ""
     note = f'<p class="note">No forecast available for: {e(", ".join(r["missing"]))}.</p>' if r.get("missing") else ""
     va = cfg.get("links", {}).get("sigalert_va_default", {})
@@ -970,11 +990,14 @@ def main():
 <header><div class="brand"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
 <div><h1>Mosaic Weather System</h1><p class="sub">Forecast as of {gen.strftime('%I:%M %p').lstrip('0')}, {gen.strftime('%A, %b ')}{gen.day}.{sig_link}</p></div></div>
 <button class="theme" type="button">Dark mode</button>{note}</header>
-<div class="bl {status}">{e(r.get("bottom_line", ""))}{ai_note}</div>
+<div class="bl {status}">{bl_html}{ai_note}</div>
 {bar}
 <div class="views">{views}</div>
 <footer>Sources: National Weather Service, with Open-Meteo as backup. Map positions are approximate. Reporting only, not a go or no-go call.</footer>
 </div>{SCRIPT}</body></html>"""
+    # Anything marked minor also gets the flag styles, recolored by the .minor rule in the CSS
+    html = re.sub(r'class="([^"]*\bminor\b[^"]*)"',
+                  lambda m: m.group(0) if re.search(r"\bflag\b", m.group(1)) else f'class="{m.group(1)} flag"', html)
     OUT_PATH.write_text(html, encoding="utf-8")
     print(f"Saved {OUT_PATH.relative_to(ROOT)} ({len(html) // 1024} KB)")
 
