@@ -35,6 +35,45 @@ def event_sentence(e):
     return f"{sev}{title} for {e['regions']}, {e['when']}."
 
 
+def short_why(why):
+    """'flood watch in effect', 'gusts to 40 mph' -> 'flood watch, gusts to 40 mph'"""
+    out = []
+    for w in why:
+        w = re.sub(r" (in effect|expected)$", "", w.strip().rstrip("."))
+        w = re.sub(r", near the .*$", "", w)
+        if w and w not in out:
+            out.append(w)
+    return ", ".join(out[:3]) or "flagged"
+
+
+def mark_severity(results):
+    """Tag each flagged location, run and run stretch in flag_days with "sev": minor or significant,
+    taken from the events and truck runs that cover them. Used to color Minor differently from Significant."""
+    order = {None: 0, "minor": 1, "significant": 2}
+    runs = {(x["date"], x["id"]): x for x in results.get("run_events", [])}
+    for i, day in enumerate(results.get("flag_days", [])):
+        for k, v in day["locations"].items():
+            if v.get("status") != "flag":
+                continue
+            sevs = [e["severity"] for e in results.get("events", [])
+                    if e["level"] == "flag" and i in e.get("days", []) and k in e["locations"]]
+            v["sev"] = max(sevs, key=order.get) if sevs else "significant"
+        for run in day.get("runs", []):
+            if run.get("status") != "flag":
+                continue
+            re_ = runs.get((day["date"], run["id"]))
+            run["sev"] = (re_ or {}).get("severity") or "significant"
+            for p in run["points"]:
+                if p["status"] == "flag":
+                    p["sev"] = run["sev"]
+    return results
+
+
+def lines(text):
+    """Split the bottom line into one item per line for display."""
+    return [x.strip() for x in re.split(r"(?<=[.!?])\s+(?=[A-Z])", text or "") if x.strip()]
+
+
 def rule_based(results):
     flags = [e for e in results["events"] if e["level"] == "flag"]
     watches = [e for e in results["events"] if e["level"] != "flag"]
@@ -54,10 +93,10 @@ def rule_based(results):
         if runs:
             names = []
             for r in runs:
-                n = f"{r['label'].split(',')[0]} {r['name']}"
+                n = f"{r['label'].split(',')[0]} {r['name']} ({short_why(r['why'])})"
                 if n not in names:
                     names.append(n)
-            parts.append("Truck runs affected: " + ", ".join(names) + ".")
+            parts.append("Truck runs affected: " + "; ".join(names) + ".")
     if results.get("cleared"):
         parts.append("No longer expected: " + "; ".join(f"{c['title']}{' for ' + c['regions'] if c['regions'] else ''}, {c['when']}" for c in results["cleared"][:3]) + ".")
     return " ".join(parts)
@@ -77,8 +116,10 @@ PROMPT = """You write the opening summary of a daily weather report for a tile d
 logistics manager. It covers 9 stores, a distribution center (the CSC in Doswell, VA) and overnight \
 truck runs in Virginia, Maryland and North Carolina.
 
-Rewrite the draft into 2 or 3 short, plain sentences a busy manager can read in 10 seconds. Lead with \
-the most serious item and say where and when. Mention affected truck runs by name. Use only the facts \
+Rewrite the draft as short, plain sentences a busy manager can read in 10 seconds, one sentence per \
+weather event and one for the truck runs; each sentence will be shown on its own line. Lead with the \
+most serious item and say what it is (for example high wind, ice, heavy snow or a flood watch), where and \
+when. Mention affected truck runs by name with what flagged them. Use only the facts \
 given; never add numbers, places, times or advice that are not in them. This is reporting only, so do \
 not recommend closing, delaying or cancelling anything. Do not use em dashes. Reply with the summary \
 text only.
