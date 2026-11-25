@@ -4,7 +4,8 @@
 #     since the last email (new, worse, eased, dropped, amounts, rush-hour
 #     timing, official alerts)
 #   "Run workflow" button: preview only by default (builds everything, sends
-#   nothing); choose "Send to everyone" to send an on-demand update
+#   nothing); "Send to me only" for a test email; "Send to everyone" to send an
+#   on-demand update
 #
 # GitHub schedules run on UTC, which ignores daylight saving, so each time
 # has two triggers. Only the one matching the current Eastern clock counts.
@@ -31,6 +32,7 @@ on:
         type: choice
         options:
           - "Preview only, no email"
+          - "Send to me only"
           - "Send to everyone"
         default: "Preview only, no email"
 
@@ -113,11 +115,12 @@ jobs:
           import json, os
           email = json.load(open("output/email.json", encoding="utf-8"))
           res = json.load(open("output/results.json", encoding="utf-8"))
-          sending = os.environ["GITHUB_EVENT_NAME"] == "schedule" or os.environ.get("DELIVERY") == "Send to everyone"
+          sending = os.environ["GITHUB_EVENT_NAME"] == "schedule" or os.environ.get("DELIVERY") in ("Send to everyone", "Send to me only")
           changes = res.get("changes", [])
           lines = [
               "## Mosaic Weather System",
-              "**Email:** " + ("being sent if warranted" if sending else "preview only, nothing sent"),
+              "**Email:** " + ("sent to you only (test)" if os.environ.get("DELIVERY") == "Send to me only"
+                               else "being sent if warranted" if sending else "preview only, nothing sent"),
               "",
               "**Subject:** " + email["subject"],
               "",
@@ -136,8 +139,9 @@ jobs:
           DELIVERY: ${{ inputs.delivery }}
 
       - name: Send the email through Power Automate
-        if: steps.clock.outputs.mode != 'skip' && (github.event_name == 'schedule' || inputs.delivery == 'Send to everyone')
+        if: steps.clock.outputs.mode != 'skip' && (github.event_name == 'schedule' || inputs.delivery == 'Send to everyone' || inputs.delivery == 'Send to me only')
         env:
+          DELIVERY: ${{ inputs.delivery }}
           RUN_MODE: ${{ steps.clock.outputs.mode }}
           RUN_SLOT: ${{ steps.clock.outputs.slot }}
           MWS_FLOW_URL: ${{ secrets.MWS_FLOW_URL }}
