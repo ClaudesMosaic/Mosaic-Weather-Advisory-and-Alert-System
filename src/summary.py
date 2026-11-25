@@ -69,6 +69,13 @@ def mark_severity(results):
     return results
 
 
+def where_text(ev):
+    """Store list for an event, skipped when the event covers the whole network."""
+    if ev.get("regions") == "the whole network" or not ev.get("names"):
+        return ""
+    return ", ".join(ev["names"]) + ". "
+
+
 def lines(text):
     """Split the bottom line into one item per line for display."""
     return [x.strip() for x in re.split(r"(?<=[.!?])\s+(?=[A-Z])", text or "") if x.strip()]
@@ -93,10 +100,10 @@ def rule_based(results):
         if runs:
             names = []
             for r in runs:
-                n = f"{r['label'].split(',')[0]} {r['name']} ({short_why(r['why'])})"
+                n = f"{r['label'].split(',')[0]} {r['name']}"
                 if n not in names:
                     names.append(n)
-            parts.append("Truck runs affected: " + "; ".join(names) + ".")
+            parts.append("Truck runs affected: " + ", ".join(names) + ".")
     if results.get("cleared"):
         parts.append("No longer expected: " + "; ".join(f"{c['title']}{' for ' + c['regions'] if c['regions'] else ''}, {c['when']}" for c in results["cleared"][:3]) + ".")
     return " ".join(parts)
@@ -119,7 +126,7 @@ truck runs in Virginia, Maryland and North Carolina.
 Rewrite the draft as short, plain sentences a busy manager can read in 10 seconds, one sentence per \
 weather event and one for the truck runs; each sentence will be shown on its own line. Lead with the \
 most serious item and say what it is (for example high wind, ice, heavy snow or a flood watch), where and \
-when. Mention affected truck runs by name with what flagged them. Use only the facts \
+when. Mention affected truck runs by name only. Use only the facts \
 given; never add numbers, places, times or advice that are not in them. This is reporting only, so do \
 not recommend closing, delaying or cancelling anything. Do not use em dashes. Reply with the summary \
 text only.
