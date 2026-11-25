@@ -153,6 +153,58 @@ def runs_table(run_events):
             f"<table {TABLE}><colgroup><col width=\"100\"><col></colgroup>{''.join(rows)}</table>")
 
 
+CHANGE_ICON = {"new": "&#9650;", "worse": "&#9650;", "amount": "&#9650;", "timing": "&#9201;&#65039;", "alert": "&#9888;&#65039;",
+               "better": "&#9660;", "dropped": "&#10003;"}
+
+
+def since_label(r):
+    if not r.get("compared_to"):
+        return "the last email"
+    t = datetime.fromisoformat(r["compared_to"])
+    when = t.strftime("%I:%M %p").lstrip("0").replace(":00 ", " ")
+    gen = datetime.fromisoformat(r["generated"])
+    day = "" if t.date() == gen.date() else f" {t.strftime('%a')}"
+    return f"the{day} {when} email"
+
+
+def change_subject(r, tag):
+    ch = r["changes"]
+    top = ch[0]
+    up = any(c["rank"] >= 2 for c in ch)
+    icon = "⚠️" if up else "✅"
+    s = f"{icon} {tag}: {top['phrase']}"
+    if len(ch) > 1:
+        s += f" + {len(ch) - 1} more"
+    return s
+
+
+def changes_box(r):
+    ch = r.get("changes") or []
+    if not ch:
+        return ""
+    rows = []
+    for c in ch:
+        up = c["rank"] >= 2
+        color = FLAG_BAR if up else GREEN
+        icon = CHANGE_ICON.get(c["kind"], "&#8226;")
+        if c["kind"] == "amount":
+            icon = "&#9650;" if " up to " in c["phrase"] else "&#9660;"
+        if c["kind"] == "alert" and " ended" in c["phrase"]:
+            icon, color = "&#10003;", GREEN
+        if c["kind"] == "timing" and "no longer" in c["phrase"]:
+            color = GREEN
+        rows.append(
+            f"<tr><td width=\"26\" style=\"{FONT}font-size:14px;color:{color};padding:5px 0;vertical-align:top\">{icon}</td>"
+            f"<td style=\"{FONT}font-size:14px;color:{INK};padding:5px 0;vertical-align:top\"><b>{e(c['phrase'])}</b>"
+            f"<span style=\"color:{MUTED}\"> &nbsp;{e(c['when'])}</span></td></tr>")
+    n = len(ch)
+    return (f"<table {TABLE}><tr><td style=\"border:2px solid #16212b;padding:10px 14px\">"
+            f"<div style=\"{FONT}font-size:15px;font-weight:bold;color:{INK};margin-bottom:4px\">"
+            f"What changed since {e(since_label(r))} ({n} change{'s' if n != 1 else ''})</div>"
+            f"<table {TABLE}><colgroup><col width=\"26\"><col></colgroup>{''.join(rows)}</table></td></tr></table>"
+            f"<div style=\"height:12px;line-height:12px;font-size:0\">&nbsp;</div>")
+
+
 def cleared_line(cleared):
     if not cleared:
         return ""
@@ -282,17 +334,22 @@ def main():
     flag_days, outlook_days = r["flag_days"], r["outlook_days"]
     gen = datetime.fromisoformat(r["generated"])
 
+    # RUN_MODE is set by the workflow: morning, check or manual. RUN_SLOT is the check's time, like "3 PM".
     mode = os.environ.get("RUN_MODE", "morning")
-    tag = {"morning": "MWS 6 AM", "noon": "MWS noon update", "manual": "MWS update"}.get(mode, "MWS")
-    heading = {"morning": "6 AM network forecast", "noon": "Noon update, sent because there are flags,",
+    slot = os.environ.get("RUN_SLOT", "")
+    tag = {"morning": "MWS 6 AM", "check": f"MWS {slot} update".replace("  ", " "), "manual": "MWS update"}.get(mode, "MWS")
+    heading = {"morning": "6 AM network forecast", "check": f"{slot} update, sent because the forecast changed,".strip(),
                "manual": "On-demand update"}.get(mode, "Network forecast")
 
     flags = [x for x in r["events"] if x["level"] == "flag"]
     run_flags = [x for x in r["run_events"] if x["level"] == "flag"]
     worst = "flag" if flags or run_flags else "watch" if r["events"] or r["run_events"] else "clear"
-    subject = subject_for(r, tag)
-    if any(o["level"] == "a" for o in outlook_days):
-        subject += " (watch later this week)"
+    if mode == "check" and r.get("changes"):
+        subject = change_subject(r, tag)
+    else:
+        subject = subject_for(r, tag)
+        if any(o["level"] == "a" for o in outlook_days):
+            subject += " (watch later this week)"
 
     notes = []
     if r.get("missing"):
@@ -302,14 +359,14 @@ def main():
     note_html = "".join(f"<div style=\"{FONT}font-size:13px;color:{FLAG_TXT};margin:0 0 8px\">{e(n)}</div>" for n in notes)
 
     if worst == "flag":
-        body_main = (events_table(r["events"]) + runs_table(r["run_events"]) + cleared_line(r.get("cleared"))
+        body_main = (events_table(r["events"]) + runs_table(r["run_events"]) + ("" if r.get("changes") else cleared_line(r.get("cleared")))
                      + f"<div style=\"{FONT}font-size:15px;font-weight:bold;color:{INK};margin:22px 0 0\">Today, {e(flag_days[0]['label'])}</div>"
                      + forecast_tables(flag_days[0], cfg)
                      + f"<div style=\"{FONT}font-size:15px;font-weight:bold;color:{INK};margin:20px 0 6px\">Next 2 days</div>"
                      + "".join(day_line(d) for d in flag_days[1:]))
     else:
         # Calm-day short version: heads-ups (if any) and a few lines of forecast
-        body_main = (events_table(r["events"]) + runs_table(r["run_events"]) + cleared_line(r.get("cleared"))
+        body_main = (events_table(r["events"]) + runs_table(r["run_events"]) + ("" if r.get("changes") else cleared_line(r.get("cleared")))
                      + f"<div style=\"{FONT}font-size:15px;font-weight:bold;color:{INK};margin:20px 0 6px\">Next 3 days</div>"
                      + "".join(day_line(d) for d in flag_days))
 
@@ -320,6 +377,7 @@ def main():
 <table role="presentation" width="680" cellpadding="0" cellspacing="0" style="max-width:680px;width:100%"><tr><td>
 {header_band(heading, gen)}
 {note_html}
+{changes_box(r)}
 {bottom_line_box(r, worst)}
 {body_main}
 {outlook(outlook_days)}
