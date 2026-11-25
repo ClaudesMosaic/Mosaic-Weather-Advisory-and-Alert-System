@@ -93,8 +93,10 @@ def _day(label):
     return label.split(",")[0]
 
 
-def _add(out, kind, rank, sev, phrase, when):
+def _add(out, kind, rank, sev, phrase, when, event=None):
     out.append({"kind": kind, "rank": rank, "severity": sev, "phrase": phrase, "when": when})
+    if event is not None:  # shown as a note on that event's row in the email
+        event.setdefault("notes", []).append(phrase)
 
 
 def compare(results, now):
@@ -138,22 +140,22 @@ def compare(results, now):
         if abs(ds) >= SNOW_STEP and (ds > 0 or not started):
             if e.get("snow_in", 0) < 0.1:
                 _add(out, "amount", 1.5, o.get("severity"),
-                     f"{e['regions']} snow no longer expected (was {o.get('snow_in', 0):.1f}\")", e["when"])
+                     f"{e['regions']} snow no longer expected (was {o.get('snow_in', 0):.1f}\")", e["when"], event=e)
             else:
                 word = "up" if ds > 0 else "down"
                 _add(out, "amount", 3 if ds > 0 else 1, e["severity"],
-                     f"{e['regions']} snow {word} to {e['snow_in']:.1f}\" (was {o.get('snow_in', 0):.1f}\")", e["when"])
+                     f"{e['regions']} snow {word} to {e['snow_in']:.1f}\" (was {o.get('snow_in', 0):.1f}\")", e["when"], event=e)
             if ds > 0 and e["change"] is None:
                 e["change"] = "worse"
         di = e.get("ice_in", 0) - o.get("ice_in", 0)
         if abs(di) >= ICE_STEP and (di > 0 or not started):
             if e.get("ice_in", 0) < 0.01:
                 _add(out, "amount", 1.5, o.get("severity"),
-                     f"{e['regions']} ice no longer expected (was {o.get('ice_in', 0):.2f}\")", e["when"])
+                     f"{e['regions']} ice no longer expected (was {o.get('ice_in', 0):.2f}\")", e["when"], event=e)
             else:
                 word = "up" if di > 0 else "down"
                 _add(out, "amount", 3 if di > 0 else 1, e["severity"],
-                     f"{e['regions']} ice {word} to {e['ice_in']:.2f}\" (was {o.get('ice_in', 0):.2f}\")", e["when"])
+                     f"{e['regions']} ice {word} to {e['ice_in']:.2f}\" (was {o.get('ice_in', 0):.2f}\")", e["when"], event=e)
             if di > 0 and e["change"] is None:
                 e["change"] = "worse"
 
@@ -163,10 +165,10 @@ def compare(results, now):
             continue  # last email came from an older version without rush-hour tracking
         now_r, was_r = live(e.get("rush", [])), live(o.get("rush", []))
         for lab in sorted(now_r - was_r):
-            _add(out, "timing", 2, e["severity"], f"{_name(e)} now during {lab}", e["when"])
+            _add(out, "timing", 2, e["severity"], f"{_name(e)} now during {lab}", e["when"], event=e)
         if not started:
             for lab in sorted(was_r - now_r):
-                _add(out, "timing", 1, e["severity"], f"{_name(e)} no longer during {lab}", e["when"])
+                _add(out, "timing", 1, e["severity"], f"{_name(e)} no longer during {lab}", e["when"], event=e)
 
 
     # Official alerts, tracked by location
@@ -199,6 +201,7 @@ def compare(results, now):
         _add(out, "dropped", 1, o.get("severity"), f"{_name(o)} dropped", o["when"])
 
     # Truck runs
+    n_loc = len(out)
     prev_runs = {(r["date"], r["id"]): r for r in prev.get("run_events", [])}
     seen = set()
     for r in results["run_events"]:
@@ -231,14 +234,17 @@ def compare(results, now):
         results["cleared"].append({"title": f"{o['name']} run", "regions": "", "when": o["label"]})
         _add(out, "dropped", 1, o.get("severity"), f"{o['name']} ({_day(o['label'])}) flag dropped", o["label"])
 
+    for c in out[n_loc:]:
+        c["scope"] = "run"  # reported in the email's truck runs section, not the top box
     # Truck runs newly flagged or worse: one line instead of one per run
     runs_up = [c for c in out if c.get("run") in ("new", "worse")]
     if len(runs_up) > 1:
         out = [c for c in out if c not in runs_up]
         sev = max((c["severity"] for c in runs_up), key=lambda s: SEV[s])
         _add(out, "runs", 3, sev, "Truck runs now flagged: " + "; ".join(c["short"] for c in runs_up), "")
+        out[-1]["scope"] = "run"
     for c in out:
         c.pop("run", None), c.pop("short", None)
 
-    out.sort(key=lambda c: (-c["rank"], -SEV[c["severity"]]))
+    out.sort(key=lambda c: (c.get("scope") == "run", -c["rank"], -SEV[c["severity"]]))
     results["changes"] = out
