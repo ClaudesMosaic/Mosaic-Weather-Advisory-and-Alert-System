@@ -23,6 +23,8 @@ from pathlib import Path
 
 import yaml
 
+import summary
+
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config" / "network.yaml"
 RESULTS_PATH = ROOT / "output" / "results.json"
@@ -35,10 +37,11 @@ MUTED = "#5b6a60"
 LINE = "#e1e6df"
 ZEBRA = "#f3f6f1"
 FLAG_BG, FLAG_BAR, FLAG_TXT = "#fbe5e1", "#c23b2a", "#9b2c1e"
-WATCH_BG, WATCH_BAR = "#fbf0d8", "#b77a0e"
+WATCH_BG, WATCH_BAR = "#fbf3cf", "#c9a400"
+MINOR_BG, MINOR_BAR = "#fdebd9", "#e07a1f"
 CLEAR_BG = "#e7f1dc"
 SEV_BADGE = {"significant": ("#c23b2a", "#ffffff", "Significant"),
-             "minor": ("#f3c4bb", "#7a2318", "Minor"),
+             "minor": ("#f39a4a", "#3d1d00", "Minor"),
              None: ("#f4e07a", "#1c2620", "Heads-up")}
 CHANGE_BADGE = {"new": ("#1c2620", "NEW"), "worse": ("#c23b2a", "WORSE"), "better": ("#4d8723", "BETTER")}
 OUTLOOK = {"a": ("#f6b46a", "Potential hazard"), "y": ("#f4e07a", "Worth watching"), "g": ("#c6e5a6", "Nothing notable")}
@@ -108,15 +111,17 @@ def header_band(heading, gen):
 
 
 def bottom_line_box(r, worst):
-    bar, bg = {"flag": (FLAG_BAR, FLAG_BG), "watch": (WATCH_BAR, WATCH_BG)}.get(worst, (GREEN, CLEAR_BG))
-    icon = {"flag": "&#9888;&#65039;", "watch": "&#128993;"}.get(worst, "&#9989;")
+    bar, bg = {"flag": (FLAG_BAR, FLAG_BG), "minor": (MINOR_BAR, MINOR_BG),
+               "watch": (WATCH_BAR, WATCH_BG)}.get(worst, (GREEN, CLEAR_BG))
+    icon = {"flag": "&#9888;&#65039;", "minor": "&#9888;&#65039;", "watch": "&#128993;"}.get(worst, "&#9989;")
     note = (f"<div style=\"{FONT}font-size:11px;color:{MUTED};margin-top:6px\">Summary written by Claude from the forecast data below.</div>"
             if r.get("bottom_line_by_ai") else "")
+    body = "".join(f"<div style=\"{FONT}font-size:16px;line-height:1.45;color:{INK};margin-top:4px\">{e(x)}</div>"
+                   for x in summary.lines(r["bottom_line"]))
     return (f"<table {TABLE}><tr><td width=\"5\" style=\"background:{bar}\"></td>"
             f"<td style=\"background:{bg};padding:12px 14px\">"
             f"<div style=\"{FONT}font-size:12px;font-weight:bold;letter-spacing:.06em;color:{MUTED};text-transform:uppercase\">{icon} The bottom line</div>"
-            f"<div style=\"{FONT}font-size:16px;line-height:1.45;color:{INK};margin-top:4px\">{e(r['bottom_line'])}</div>{note}"
-            f"</td></tr></table>")
+            f"{body}{note}</td></tr></table>")
 
 
 def events_table(events):
@@ -227,7 +232,8 @@ def forecast_tables(day, cfg):
             if not v:
                 continue
             s = v["summary"]
-            bg = FLAG_BG if v["status"] == "flag" else WATCH_BG if v["status"] == "watch" else (ZEBRA if i % 2 else "#ffffff")
+            minor = v["status"] == "flag" and v.get("sev") == "minor"
+            bg = MINOR_BG if minor else FLAG_BG if v["status"] == "flag" else WATCH_BG if v["status"] == "watch" else (ZEBRA if i % 2 else "#ffffff")
             mark = "&#9888;&#65039; " if v["status"] == "flag" else ""
             td = f"style=\"{FONT}font-size:14px;color:{INK};padding:6px 8px;border-bottom:1px solid {LINE};background:{bg}\""
             tdr = td.replace("padding:6px 8px", "padding:6px 8px;text-align:right")
@@ -344,6 +350,9 @@ def main():
     flags = [x for x in r["events"] if x["level"] == "flag"]
     run_flags = [x for x in r["run_events"] if x["level"] == "flag"]
     worst = "flag" if flags or run_flags else "watch" if r["events"] or r["run_events"] else "clear"
+    box = ("flag" if any(x["severity"] == "significant" for x in flags + run_flags)
+           else "minor" if flags or run_flags else worst)
+    summary.mark_severity(r)
     if mode == "check" and r.get("changes"):
         subject = change_subject(r, tag)
     else:
@@ -378,7 +387,7 @@ def main():
 {header_band(heading, gen)}
 {note_html}
 {changes_box(r)}
-{bottom_line_box(r, worst)}
+{bottom_line_box(r, box)}
 {body_main}
 {outlook(outlook_days)}
 {how_to_read()}
