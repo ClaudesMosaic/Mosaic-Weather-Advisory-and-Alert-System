@@ -466,8 +466,10 @@ def main():
                 day["locations"][k] = {"name": names[k], "state": locs[k]["state"],
                                        "status": st, "flags": fl, "summary": summ}
             wd = WEEKDAYS[d.weekday()]
+            no_runs = {str(x) for x in cfg.get("no_run_dates", []) or []}
+            day["no_runs"] = d.date().isoformat() in no_runs
             for rk, run in cfg.get("runs", {}).items():
-                if wd not in run.get("days", []):
+                if wd not in run.get("days", []) or day["no_runs"]:
                     continue
                 r = run_on_day(run, d, points, cfg)
                 day["runs"].append({"id": rk, "name": run["name"], "operator": run.get("operator", ""),
@@ -512,6 +514,11 @@ def main():
                     if ("near the" in reason and r["status"] == "flag") or reason in why:
                         continue
                     why.append(reason)
+            # Several stretches with gusts: keep only the strongest
+            gusts = [w for w in why if w.startswith("gusts to ")]
+            if len(gusts) > 1:
+                top = max(gusts, key=lambda w: int(w.split()[2]))
+                why = [w for w in why if not w.startswith("gusts to ") or w == top]
             first, last = bad[0], bad[-1]
             where = first["name"] if first["name"] == last["name"] else f"{first['name']} to {last['name']}"
             r["trouble"] = {"where": where, "from": first["window"].split(" to ")[0],
