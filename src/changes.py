@@ -212,10 +212,12 @@ def compare(results, now):
             r["change"] = "new"
             if flagged:
                 _add(out, "new", 3, r["severity"], f"{r['name']} ({_day(r['label'])}) now flagged: {short_why(r['why'])}", r["label"])
+                out[-1].update(run="new", short=f"{_day(r['label'])} {r['name']} ({short_why(r['why'])})")
         elif _score(r) > _score(o):
             r["change"] = "worse"
             if flagged or o["level"] == "flag":
                 _add(out, "worse", 3, r["severity"], f"{r['name']} ({_day(r['label'])}) now {_level_word(r)}: {short_why(r['why'])}", r["label"])
+                out[-1].update(run="worse", short=f"{_day(r['label'])} {r['name']} ({short_why(r['why'])})")
         elif _score(r) < _score(o) and not departed:
             r["change"] = "better"
             if o["level"] == "flag":
@@ -228,6 +230,15 @@ def compare(results, now):
             continue
         results["cleared"].append({"title": f"{o['name']} run", "regions": "", "when": o["label"]})
         _add(out, "dropped", 1, o.get("severity"), f"{o['name']} ({_day(o['label'])}) flag dropped", o["label"])
+
+    # Truck runs newly flagged or worse: one line instead of one per run
+    runs_up = [c for c in out if c.get("run") in ("new", "worse")]
+    if len(runs_up) > 1:
+        out = [c for c in out if c not in runs_up]
+        sev = max((c["severity"] for c in runs_up), key=lambda s: SEV[s])
+        _add(out, "runs", 3, sev, "Truck runs now flagged: " + "; ".join(c["short"] for c in runs_up), "")
+    for c in out:
+        c.pop("run", None), c.pop("short", None)
 
     out.sort(key=lambda c: (-c["rank"], -SEV[c["severity"]]))
     results["changes"] = out
