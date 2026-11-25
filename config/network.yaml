@@ -183,6 +183,13 @@ rules:
       - Winter Storm Warning
       - Winter Storm Watch
       - Winter Weather Advisory
+      - Flood Watch
+      - Flood Warning
+      - Flash Flood Watch
+      - Flash Flood Warning
+
+
+      
   rush_hour_snow:
     description: Snow during the AM or PM rush
     min_inches: 0.5
