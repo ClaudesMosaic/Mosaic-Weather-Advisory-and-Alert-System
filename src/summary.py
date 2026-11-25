@@ -28,6 +28,8 @@ def lower_first(s):
 
 
 def event_sentence(e):
+    if e.get("hazard") == "alert":
+        return f"{e['title']} for {e['regions']}, {e['when']}."  # an official alert name says its own severity
     sev = "Significant " if e["severity"] == "significant" else ""
     title = lower_first(e["title"]) if sev else e["title"]
     return f"{sev}{title} for {e['regions']}, {e['when']}."
@@ -45,10 +47,10 @@ def rule_based(results):
         else:
             parts.append("No weather concerns for any location or truck run in the next 3 days.")
     else:
-        for e in flags[:2]:
+        for e in flags[:3]:
             parts.append(event_sentence(e))
-        if len(flags) > 2:
-            parts.append(f"Plus {len(flags) - 2} more event{'s' if len(flags) > 3 else ''}, listed below.")
+        if len(flags) > 3:
+            parts.append(f"Plus {len(flags) - 3} more event{'s' if len(flags) > 4 else ''}, listed below.")
         if runs:
             names = []
             for r in runs:
