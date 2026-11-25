@@ -29,6 +29,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import events as ev_mod
+from summary import short_why
 
 STATE_PATH = Path(__file__).resolve().parent.parent / "state" / "last_results.json"
 RANK = {"clear": 0, "watch": 1, "flag": 2}
@@ -183,6 +184,8 @@ def compare(results, now):
             end = max(datetime.fromisoformat(a["end"]) for a in grp)
             when = ev_mod.when_label(start, end)
             if kind == "issued":
+                if any(e["hazard"] == "alert" and e["title"] == name and e.get("change") == "new" for e in results["events"]):
+                    continue  # already listed as a new event
                 _add(out, "alert", 3, "significant" if "Warning" in name else "minor", f"{name} issued, {regions}", when)
             else:
                 _add(out, "alert", 1, None, f"{name} ended early, {regions}", when)
@@ -208,11 +211,11 @@ def compare(results, now):
         if o is None:
             r["change"] = "new"
             if flagged:
-                _add(out, "new", 3, r["severity"], f"{r['name']} ({_day(r['label'])}) now flagged", r["label"])
+                _add(out, "new", 3, r["severity"], f"{r['name']} ({_day(r['label'])}) now flagged: {short_why(r['why'])}", r["label"])
         elif _score(r) > _score(o):
             r["change"] = "worse"
             if flagged or o["level"] == "flag":
-                _add(out, "worse", 3, r["severity"], f"{r['name']} ({_day(r['label'])}) now {_level_word(r)}", r["label"])
+                _add(out, "worse", 3, r["severity"], f"{r['name']} ({_day(r['label'])}) now {_level_word(r)}: {short_why(r['why'])}", r["label"])
         elif _score(r) < _score(o) and not departed:
             r["change"] = "better"
             if o["level"] == "flag":
