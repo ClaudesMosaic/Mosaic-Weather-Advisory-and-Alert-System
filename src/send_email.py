@@ -69,6 +69,11 @@ def main():
 
     payload = json.loads(EMAIL_PATH.read_text(encoding="utf-8"))
     payload["key"] = key
+    # "Send to me only": the flow sends it to Adam alone, and it doesn't count as a sent report
+    test = os.environ.get("DELIVERY") == "Send to me only" and mode == "manual"
+    payload["audience"] = "me" if test else "all"
+    if test:
+        payload["subject"] = "[Test] " + payload["subject"]
     stamp = results["flag_days"][0]["date"]
     if MAP_PATH.exists():
         payload["map_name"] = f"MWS Weather Map {stamp}.html"
@@ -91,6 +96,9 @@ def main():
         else:
             if 200 <= r.status_code < 300:
                 print(f"Handed off to Power Automate (HTTP {r.status_code}): {payload['subject']}")
+                if test:
+                    print("Test send: not saved as the last report, so the next check still compares with the last real email.")
+                    return
                 STATE_DIR.mkdir(exist_ok=True)
                 if mode in ("morning", "check"):
                     sent["morning" if mode == "morning" else f"check {slot}"] = today
