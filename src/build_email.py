@@ -136,7 +136,7 @@ def events_table(events):
         rows.append(
             f"<tr><td width=\"100\" {td}>{badge(bg, fg, word)}</td>"
             f"<td {td}><b>{e(ev['title'])}: {e(where)}</b>{change_badge(ev.get('change'))}<br>"
-            f"<span style=\"font-size:13px;color:{MUTED}\">{e(', '.join(ev['names']))}. {e(ev['detail'])}{e(alerts)}</span></td>"
+            f"<span style=\"font-size:13px;color:{MUTED}\">{e(summary.where_text(ev))}{e(ev['detail'])}{e(alerts)}</span></td>"
             f"<td width=\"160\" {td}>{e(ev['when'])}</td></tr>")
     return (f"<div style=\"{FONT}font-size:15px;font-weight:bold;color:{INK};margin:20px 0 6px\">Weather events, next 3 days</div>"
             f"<table {TABLE}><colgroup><col width=\"100\"><col><col width=\"160\"></colgroup>{''.join(rows)}</table>")
@@ -158,7 +158,7 @@ def runs_table(run_events):
             f"<table {TABLE}><colgroup><col width=\"100\"><col></colgroup>{''.join(rows)}</table>")
 
 
-CHANGE_ICON = {"new": "&#9650;", "worse": "&#9650;", "amount": "&#9650;", "timing": "&#9201;&#65039;", "alert": "&#9888;&#65039;",
+CHANGE_ICON = {"runs": "&#9650;", "new": "&#9650;", "worse": "&#9650;", "amount": "&#9650;", "timing": "&#9201;&#65039;", "alert": "&#9888;&#65039;",
                "better": "&#9660;", "dropped": "&#10003;"}
 
 
@@ -311,7 +311,7 @@ def subject_for(r, tag):
     flags = [x for x in r["events"] if x["level"] == "flag"]
     runs = [x for x in r["run_events"] if x["level"] == "flag"]
     watches = [x for x in r["events"] if x["level"] != "flag"] + [x for x in r["run_events"] if x["level"] != "flag"]
-    changed = any(x.get("change") in ("new", "worse") for x in flags + runs)
+    changed = "update" not in tag and any(x.get("change") in ("new", "worse") for x in flags + runs)
     if flags:
         top = flags[0]
         s = f"⚠️ {tag}: {top['title']}, {top['regions']}, {short_when(top['start'], top['end'])}"
