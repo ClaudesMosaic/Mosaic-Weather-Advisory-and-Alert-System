@@ -83,10 +83,18 @@ def badge(bg, fg, text):
 
 
 def change_badge(c):
+    """NEW / WORSE / BETTER, placed in front of the item's name."""
     if c not in CHANGE_BADGE:
         return ""
     bg, text = CHANGE_BADGE[c]
-    return " " + badge(bg, "#ffffff", text)
+    return badge(bg, "#ffffff", text) + " "
+
+
+def notes_line(notes):
+    if not notes:
+        return ""
+    eased = all(" no longer " in n or " down to " in n for n in notes)
+    return f"<br><span style=\"font-size:13px;color:{GREEN if eased else FLAG_TXT}\">{e('; '.join(notes))}.</span>"
 
 
 # ----------------------------------------------------------------------
@@ -135,11 +143,32 @@ def events_table(events):
         alerts = f" {', '.join(ev['alerts'])} in effect." if ev.get("alerts") else ""
         rows.append(
             f"<tr><td width=\"100\" {td}>{badge(bg, fg, word)}</td>"
-            f"<td {td}><b>{e(ev['title'])}: {e(where)}</b>{change_badge(ev.get('change'))}<br>"
-            f"<span style=\"font-size:13px;color:{MUTED}\">{e(summary.where_text(ev))}{e(ev['detail'])}{e(alerts)}</span></td>"
+            f"<td {td}>{change_badge(ev.get('change'))}<b>{e(ev['title'])}: {e(where)}</b><br>"
+            f"<span style=\"font-size:13px;color:{MUTED}\">{e(summary.where_text(ev))}{e(ev['detail'])}{e(alerts)}</span>{notes_line(ev.get('notes'))}</td>"
             f"<td width=\"160\" {td}>{e(ev['when'])}</td></tr>")
     return (f"<div style=\"{FONT}font-size:15px;font-weight:bold;color:{INK};margin:20px 0 6px\">Weather events, next 3 days</div>"
             f"<table {TABLE}><colgroup><col width=\"100\"><col><col width=\"160\"></colgroup>{''.join(rows)}</table>")
+
+
+def runs_section(r):
+    """Truck runs, at the bottom of the email. NEW / WORSE / BETTER badges show what changed."""
+    gone = [c for c in r.get("cleared", []) if not c["regions"]]
+    if not r["run_events"] and not gone:
+        return ""
+    gone_html = (f"<div style=\"{FONT}font-size:13px;color:{GREEN};margin-top:8px\"><b>No longer flagged since the last report:</b> "
+                 f"<span style=\"color:{INK}\">{e('; '.join(c['title'] + ', ' + c['when'].split(',')[0] for c in gone))}</span></div>") if gone else ""
+    return (f"<div style=\"{FONT}font-size:15px;font-weight:bold;color:{INK};margin:26px 0 4px;padding-top:12px;border-top:2px solid {INK}\">Truck runs</div>"
+            + runs_table(r["run_events"]) + gone_html
+            + ("" if r["run_events"] else f"<div style=\"{FONT}font-size:14px;color:{MUTED}\">No truck runs flagged now.</div>"))
+
+
+def also_changed(r):
+    """Location changes that no badge, note or 'no longer expected' line shows (mostly official alerts)."""
+    rest = [c for c in r.get("changes") or [] if c.get("scope") != "run" and c["kind"] == "alert"]
+    if not rest:
+        return ""
+    return (f"<div style=\"{FONT}font-size:13px;color:{INK};margin-top:10px\"><b>Also changed:</b> "
+            f"{e('; '.join(c['phrase'] + ', ' + c['when'] for c in rest))}.</div>")
 
 
 def runs_table(run_events):
@@ -151,11 +180,10 @@ def runs_table(run_events):
         bg, fg, word = SEV_BADGE[r["severity"] if r["level"] == "flag" else None]
         rows.append(
             f"<tr><td width=\"100\" {td}>{badge(bg, fg, word)}</td>"
-            f"<td {td}><b>{e(r['label'].split(',')[0])} {e(r['name'])}</b>{change_badge(r.get('change'))}"
+            f"<td {td}>{change_badge(r.get('change'))}<b>{e(r['label'].split(',')[0])} {e(r['name'])}</b>"
             f" <span style=\"color:{MUTED}\">leaves {e(clock_str(r['depart']))}</span><br>"
             f"<span style=\"font-size:13px;color:{MUTED}\">{e(r['where'])}, about {e(r['from'])} to {e(r['to'])}: {e(', '.join(r['why']))}.</span></td></tr>")
-    return (f"<div style=\"{FONT}font-size:15px;font-weight:bold;color:{INK};margin:20px 0 6px\">Truck runs</div>"
-            f"<table {TABLE}><colgroup><col width=\"100\"><col></colgroup>{''.join(rows)}</table>")
+    return f"<div style=\"height:6px;line-height:6px;font-size:0\">&nbsp;</div><table {TABLE}><colgroup><col width=\"100\"><col></colgroup>{''.join(rows)}</table>"
 
 
 CHANGE_ICON = {"runs": "&#9650;", "new": "&#9650;", "worse": "&#9650;", "amount": "&#9650;", "timing": "&#9201;&#65039;", "alert": "&#9888;&#65039;",
@@ -183,10 +211,7 @@ def change_subject(r, tag):
     return s
 
 
-def changes_box(r):
-    ch = r.get("changes") or []
-    if not ch:
-        return ""
+def change_rows(ch):
     rows = []
     for c in ch:
         up = c["rank"] >= 2
@@ -202,11 +227,29 @@ def changes_box(r):
             f"<tr><td width=\"26\" style=\"{FONT}font-size:14px;color:{color};padding:5px 0;vertical-align:top\">{icon}</td>"
             f"<td style=\"{FONT}font-size:14px;color:{INK};padding:5px 0;vertical-align:top\"><b>{e(c['phrase'])}</b>"
             f"<span style=\"color:{MUTED}\"> &nbsp;{e(c['when'])}</span></td></tr>")
+    return f"<table {TABLE}><colgroup><col width=\"26\"><col></colgroup>{''.join(rows)}</table>"
+
+
+def loc_changes(r):
+    return [c for c in r.get("changes") or [] if c.get("scope") != "run"]
+
+
+def changes_box(r):
+    """Location changes at the top. Truck run changes go in the truck runs section."""
+    ch = loc_changes(r)
+    if not ch:
+        return ""
     n = len(ch)
+    # Flags that didn't change, so nothing drops out of view (this box replaces the bottom line)
+    said = " | ".join(c["phrase"] for c in ch)
+    still = [summary.event_sentence(x) for x in r["events"]
+             if x["level"] == "flag" and x.get("change") is None and not (x["title"] in said and x["regions"] in said)]
+    still_html = (f"<div style=\"{FONT}font-size:14px;color:{INK};margin-top:8px;padding-top:8px;border-top:1px solid {LINE}\">"
+                  f"<b>Still in effect:</b> {e(' '.join(still))}</div>") if still else ""
     return (f"<table {TABLE}><tr><td style=\"border:2px solid #16212b;padding:10px 14px\">"
             f"<div style=\"{FONT}font-size:15px;font-weight:bold;color:{INK};margin-bottom:4px\">"
             f"What changed since {e(since_label(r))} ({n} change{'s' if n != 1 else ''})</div>"
-            f"<table {TABLE}><colgroup><col width=\"26\"><col></colgroup>{''.join(rows)}</table></td></tr></table>"
+            f"{change_rows(ch)}{still_html}</td></tr></table>"
             f"<div style=\"height:12px;line-height:12px;font-size:0\">&nbsp;</div>")
 
 
@@ -265,7 +308,44 @@ def day_line(day):
         others = "; ".join(f"{c.lower()} at {', '.join(n)}" for c, n in conds.items() if c != main)
         c = f"Mostly {main.lower()}; {others}."
     temps = f" Highs {min(highs)}° to {max(highs)}°, lows {min(lows)}° to {max(lows)}°." if highs and lows else ""
-    return f"<div style=\"{FONT}font-size:14px;line-height:1.6;color:{INK}\"><b>{e(day['label'])}:</b> {e(c)}{temps}</div>"
+    return c + temps
+
+
+def days_list(r, first, outlook_days, title):
+    """One row per date: days within 3 days use the flags, days 4 to 7 the early outlook."""
+    td = f"style=\"{FONT}font-size:14px;color:{INK};padding:7px 8px 7px 0;border-bottom:1px solid {LINE};vertical-align:top\""
+    rows = []
+    for i, day in enumerate(r["flag_days"]):
+        if i < first:
+            continue
+        evs = [x for x in r["events"] if i in x.get("days", [])]
+        flagged = [x for x in evs if x["level"] == "flag"]
+        if flagged:
+            sev = "significant" if any(x["severity"] == "significant" for x in flagged) else "minor"
+            color, fg, word = SEV_BADGE[sev]
+        elif evs:
+            color, fg, word = SEV_BADGE[None]
+        else:
+            color, fg, word = OUTLOOK["g"][0], INK, "Nothing notable"
+        names = "; ".join(f"{x['title']}, {x['regions']}" for x in (flagged or evs)[:3])
+        text = (names + ". " if names else "") + day_line(day)
+        rows.append(
+            f"<tr><td width=\"110\" {td}><b>{e(day['label'])}</b></td>"
+            f"<td width=\"135\" {td}><span style=\"display:inline-block;background:{color};color:{fg};padding:2px 8px;font-size:12px;font-weight:bold;white-space:nowrap\">{word}</span></td>"
+            f"<td {td}>{e(text)}</td></tr>")
+    for o in outlook_days:
+        color, word = OUTLOOK[o["level"]]
+        if o["locations"] and all(v.get("no_data") for v in o["locations"].values()):
+            color, word = "#e1e6df", "Not available yet"
+        rows.append(
+            f"<tr><td width=\"110\" {td}><b>{e(o['label'])}</b><br><span style=\"font-size:12px;color:{MUTED}\">{e(o['confidence'])} confidence</span></td>"
+            f"<td width=\"135\" {td}><span style=\"display:inline-block;background:{color};color:{INK};padding:2px 8px;font-size:12px;font-weight:bold;white-space:nowrap\">{word}</span></td>"
+            f"<td {td}>{e(o['summary'])}</td></tr>")
+    if not rows:
+        return ""
+    return (f"<div style=\"{FONT}font-size:15px;font-weight:bold;color:{INK};margin:22px 0 2px\">{e(title)}</div>"
+            f"<div style=\"{FONT}font-size:12px;color:{MUTED};margin-bottom:6px\">Flags cover the next 3 days. Days 4 to 7 are early signals only.</div>"
+            f"<table {TABLE}><colgroup><col width=\"110\"><col width=\"135\"><col></colgroup>{''.join(rows)}</table>")
 
 
 def outlook(outlook_days):
@@ -350,8 +430,8 @@ def main():
     flags = [x for x in r["events"] if x["level"] == "flag"]
     run_flags = [x for x in r["run_events"] if x["level"] == "flag"]
     worst = "flag" if flags or run_flags else "watch" if r["events"] or r["run_events"] else "clear"
-    box = ("flag" if any(x["severity"] == "significant" for x in flags + run_flags)
-           else "minor" if flags or run_flags else worst)
+    box = ("flag" if any(x["severity"] == "significant" for x in flags)
+           else "minor" if flags else "watch" if r["events"] else "clear")
     summary.mark_severity(r)
     if mode == "check" and r.get("changes"):
         subject = change_subject(r, tag)
@@ -368,16 +448,14 @@ def main():
     note_html = "".join(f"<div style=\"{FONT}font-size:13px;color:{FLAG_TXT};margin:0 0 8px\">{e(n)}</div>" for n in notes)
 
     if worst == "flag":
-        body_main = (events_table(r["events"]) + runs_table(r["run_events"]) + ("" if r.get("changes") else cleared_line(r.get("cleared")))
+        body_main = (events_table(r["events"]) + also_changed(r) + cleared_line([c for c in r.get("cleared", []) if c["regions"]])
                      + f"<div style=\"{FONT}font-size:15px;font-weight:bold;color:{INK};margin:22px 0 0\">Today, {e(flag_days[0]['label'])}</div>"
                      + forecast_tables(flag_days[0], cfg)
-                     + f"<div style=\"{FONT}font-size:15px;font-weight:bold;color:{INK};margin:20px 0 6px\">Next 2 days</div>"
-                     + "".join(day_line(d) for d in flag_days[1:]))
+                     + days_list(r, 1, outlook_days, "Coming days"))
     else:
         # Calm-day short version: heads-ups (if any) and a few lines of forecast
-        body_main = (events_table(r["events"]) + runs_table(r["run_events"]) + ("" if r.get("changes") else cleared_line(r.get("cleared")))
-                     + f"<div style=\"{FONT}font-size:15px;font-weight:bold;color:{INK};margin:20px 0 6px\">Next 3 days</div>"
-                     + "".join(day_line(d) for d in flag_days))
+        body_main = (events_table(r["events"]) + also_changed(r) + cleared_line([c for c in r.get("cleared", []) if c["regions"]])
+                     + days_list(r, 0, outlook_days, "Day by day"))
 
     body = f"""<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{e(subject)}</title></head>
@@ -386,10 +464,9 @@ def main():
 <table role="presentation" width="680" cellpadding="0" cellspacing="0" style="max-width:680px;width:100%"><tr><td>
 {header_band(heading, gen)}
 {note_html}
-{changes_box(r)}
 {bottom_line_box(r, box)}
 {body_main}
-{outlook(outlook_days)}
+{runs_section(r)}
 {how_to_read()}
 <div style="{FONT}font-size:12px;color:#7a867d;margin-top:10px">
 Sources: National Weather Service, with Open-Meteo as backup. Generated {gen.strftime('%I:%M %p').lstrip('0')}.
