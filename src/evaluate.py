@@ -520,8 +520,14 @@ def main():
                                "operator": r["operator"], "depart": r["depart"], "level": r["status"],
                                "severity": r["severity"], **r["trouble"]})
 
+    # Official alerts by location, so change tracking doesn't depend on which event they attach to
+    active_alerts = [{"name": s["name"], "loc": k, "region": ev_mod.region_of(cfg, k),
+                      "start": s["start"].isoformat(timespec="minutes"), "end": s["end"].isoformat(timespec="minutes")}
+                     for k in locs for s in spans.get(k, []) if s["hazard"] == "alert"]
+
     results = {
         "generated": fc["generated"],
+        "alerts": active_alerts,
         "events": [ev_mod.to_json(e) for e in events],
         "run_events": run_events,
         "timezone": cfg["timezone"],
