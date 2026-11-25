@@ -407,31 +407,33 @@ def outlook_for(pt, day_start):
                 else "in the afternoon" if when.hour < 18 else "at night")
         note = f"{'; '.join(bits).capitalize()}, starting {part}."
         level = "a"
+        why = ("Winter Storm Watch" if watch_alert else bits[0][:1].upper() + bits[0][1:]
+               if (icy or snowy) else "Freezing precipitation possible")
     elif refreeze:
         level, note = "y", "Precipitation, then temperatures dropping to freezing. Watch for refreeze."
+        why = "Possible refreeze (black ice)"
     elif cool_wet or snowy:
         lo = min(h["temp_f"] for h in (cool_wet or hours) if h["temp_f"] is not None)
         level, note = "y", f"Precipitation likely with temperatures near {lo}°."
+        why = "Possible snow" if snowy else f"Cold rain, near {lo}°"
     else:
-        level, note = "g", "No hazards expected."
-    return {"level": level, "note": note, **day_summary(hours)}
+        level, note, why = "g", "No hazards expected.", ""
+    return {"level": level, "note": note, "why": why, **day_summary(hours)}
 
 
 def outlook_summary(locs, names):
     if locs and all(o.get("no_data") for o in locs.values()):
         return "Forecast not available yet for this day."
-    by = {"a": [], "y": [], "g": []}
-    for k, o in locs.items():
-        by[o["level"]].append(names[k])
+    # Group places by what's behind the signal, worst first: "Possible freezing rain at Raleigh."
+    groups = {}
+    for lvl in ("a", "y"):
+        for k, o in locs.items():
+            if o["level"] == lvl:
+                groups.setdefault(o.get("why") or "Worth watching", []).append(names[k])
     highs = [o["high"] for o in locs.values() if o["high"] is not None]
     temps = f" Highs {min(highs)}° to {max(highs)}°." if highs else ""
-    if by["a"]:
-        s = f"Potential hazard at {', '.join(by['a'])}."
-        if by["y"]:
-            s += f" Worth watching at {', '.join(by['y'])}."
-        return s + temps
-    if by["y"]:
-        return f"Worth watching at {', '.join(by['y'])}." + temps
+    if groups:
+        return " ".join(f"{why} at {', '.join(ps)}." for why, ps in groups.items()) + temps
     return "No hazards expected across the network." + temps
 
 
