@@ -273,6 +273,31 @@ def reason_kind(reason):
     return "cold"
 
 
+def hazard_label(why):
+    """What flagged a truck run, as hazard names: 'Flood Watch + Gusty winds'."""
+    out = []
+    for w in why:
+        r = w.lower()
+        if "in effect" in r:
+            name = w[:r.index(" in effect")].strip()
+            name = " ".join(x.capitalize() for x in name.split())
+        elif any(x in r for x in ("sleet", "freezing rain", "freezing drizzle", "ice")):
+            name = "Ice"
+        elif "snow" in r:
+            name = "Snow"
+        elif "gust" in r:
+            name = "Gusty winds"
+        elif "refreeze" in r:
+            name = "Refreeze possible"
+        elif "freezing" in r:
+            name = "Near-freezing precipitation"
+        else:
+            name = w[:1].upper() + w[1:]
+        if name not in out:
+            out.append(name)
+    return " + ".join(out[:3]) or "Flagged"
+
+
 def icon(kind, cls=""):
     return (f'<svg class="ic {kind} {cls}" aria-label="{ICON_NAME[kind]}" role="img"><title>{ICON_NAME[kind]}</title>'
             f'<use href="#ic-{kind}"/></svg>')
@@ -458,7 +483,7 @@ def flag_view(i, day, cfg, xy, r, mp):
         alerts = f' {", ".join(ev["alerts"])} in effect.' if ev.get("alerts") else ""
         items.append((RANK[ev["level"]] * 10 + SEVR[sev],
                       f'<li class="{ev["level"]}{" minor" if sev == "minor" else ""}" data-k="{ev["locations"][0]}"><div class="tags"><span class="sev {sev or "hu"}">{SEVW[sev]}</span>{chg(ev.get("change"))}<span class="ics">{event_icons(ev)}</span></div>'
-                      f'<b>{e(ev["title"])}: {e(ev["regions"])}</b><small class="when">{e(ev["when"])}</small>'
+                      f'<b class="hz">{e(ev["title"])}</b><span class="what">{e(ev["regions"])}</span><small class="when">{e(ev["when"])}</small>'
                       f'<small>{e(summary.where_text(ev))}{e(ev["detail"])}{e(alerts)}</small></li>'))
     for re_ in r.get("run_events", []):
         if re_["day"] != i:
@@ -466,7 +491,7 @@ def flag_view(i, day, cfg, xy, r, mp):
         sev = re_["severity"] if re_["level"] == "flag" else None
         items.append((RANK[re_["level"]] * 10 + SEVR[sev],
                       f'<li class="{re_["level"]}{" minor" if sev == "minor" else ""}" data-run="{re_["id"]}"><div class="tags"><span class="sev {sev or "hu"}">{SEVW[sev]}</span>{chg(re_.get("change"))}<span class="ics">{icons_for(re_["why"])}</span></div>'
-                      f'<b>{e(re_["name"])} run</b><small class="when">About {e(re_["from"])} to {e(re_["to"])}</small>'
+                      f'<b class="hz">{e(hazard_label(re_["why"]))}</b><span class="what">{e(re_["name"])} run</span><small class="when">About {e(re_["from"])} to {e(re_["to"])}</small>'
                       f'<small>{e(re_["where"])}: {e(", ".join(re_["why"]))}.</small></li>'))
     items.sort(key=lambda t: -t[0])
     flag_list = (f'<ul class="flaglist">{"".join(h for _, h in items)}</ul>' if items
@@ -752,6 +777,8 @@ td.lk a{margin-right:10px;white-space:nowrap}
 .flaglist{list-style:none;margin:0;padding:0}
 .flaglist li{border-left:4px solid var(--flag);background:var(--flag-soft);padding:8px 11px;margin:0 0 8px;border-radius:0 6px 6px 0}
 .flaglist li.watch{border-color:var(--watch);background:var(--watch-soft)}.flaglist li b{display:block;font-weight:700}
+.flaglist li b.hz{text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:3px;font-size:1.02rem}
+.flaglist li .what{display:block;font-weight:600}.flaglist li .what::first-letter{text-transform:uppercase}
 .flaglist small{display:block;color:var(--muted);font-size:.84rem;line-height:1.4}.flaglist small.when{color:var(--text)}
 .tags{margin-bottom:3px;display:flex;align-items:center}.tags .ics{margin-left:auto}.ro-c .ics{margin:0 4px 0 0}
 .sev,.chg{display:inline-block;font-size:.7rem;font-weight:800;padding:1px 7px;margin-right:6px;border-radius:3px}
