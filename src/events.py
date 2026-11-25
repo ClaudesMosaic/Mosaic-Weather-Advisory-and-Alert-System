@@ -26,6 +26,10 @@ DEFAULT_REGIONS = {
 # ----------------------------------------------------------------------
 # Small helpers
 # ----------------------------------------------------------------------
+
+def is_flood(name):
+    return "Flood" in (name or "")
+
 def clock(dt):
     if dt.minute == 0 and dt.hour in (0, 12):
         return "midnight" if dt.hour == 0 else "noon"
@@ -156,6 +160,23 @@ def point_spans(pt, start, end, cfg, x, refreeze_hours):
     return spans
 
 
+def rush_windows(cfg, start, end):
+    """The AM and PM rush hours an event overlaps, like 'Tue AM rush'."""
+    out = []
+    day = start.replace(hour=0, minute=0, second=0, microsecond=0)
+    while day < end:
+        for name, word in (("am_rush", "AM"), ("pm_rush", "PM")):
+            w = cfg.get("windows", {}).get(name)
+            if not w:
+                continue
+            ws = day.replace(hour=int(w["start"][:2]), minute=int(w["start"][3:]))
+            we = day.replace(hour=int(w["end"][:2]), minute=int(w["end"][3:]))
+            if ws < end and we > start:
+                out.append({"label": f"{day.strftime('%a')} {word} rush", "end": we.isoformat(timespec="minutes")})
+        day += timedelta(days=1)
+    return out
+
+
 def overlaps(a, b, gap=GAP):
     return a["start"] <= b["end"] + gap and b["start"] <= a["end"] + gap
 
@@ -172,13 +193,16 @@ def build_events(spans_by_key, cfg):
         for s in spans_by_key.get(k, []):
             if s["hazard"] == "alert":
                 continue
+            # Same hazard, same time and same seriousness: heavy snow in one region
+            # and light snow in another stay two separate events.
+            grade = (s["level"], s.get("severity"))
             for g in groups:
-                if g["hazard"] == s["hazard"] and overlaps(g, s):
+                if g["hazard"] == s["hazard"] and g["grade"] == grade and overlaps(g, s):
                     g["start"], g["end"] = min(g["start"], s["start"]), max(g["end"], s["end"])
                     g["locs"].setdefault(k, []).append(s)
                     break
             else:
-                groups.append({"hazard": s["hazard"], "start": s["start"], "end": s["end"], "locs": {k: [s]}})
+                groups.append({"hazard": s["hazard"], "grade": grade, "start": s["start"], "end": s["end"], "locs": {k: [s]}})
 
     # Snow then ice (or ice then snow) at the same places is one storm
     merged = []
@@ -213,7 +237,10 @@ def build_events(spans_by_key, cfg):
         for s in spans_by_key.get(k, []):
             if s["hazard"] != "alert":
                 continue
-            host = next((e for e in events if e["level"] == "flag" and k in e["locations"] and overlaps(e, s, timedelta(0))), None)
+            # Winter alerts attach to the winter event they describe; flood alerts always stand alone
+            host = None if is_flood(s["name"]) else next(
+                (e for e in events if e["level"] == "flag" and e["hazard"] in ("snow", "ice", "mix")
+                 and k in e["locations"] and overlaps(e, s, timedelta(0))), None)
             if host:
                 if s["name"] not in host["alerts"]:
                     host["alerts"].append(s["name"])
@@ -234,7 +261,12 @@ def build_events(spans_by_key, cfg):
     for e in events:
         e["when"] = when_label(e["start"], e["end"])
         e["regions"] = regions_text(cfg, e["locations"])
-        e["family"] = "winter" if e["hazard"] in ("ice", "snow", "mix", "alert") else e["hazard"]
+        if e["hazard"] == "alert" and is_flood(e["title"]):
+            e["family"] = "flood"
+            e["detail"] = "Official flood alert from the National Weather Service. Watch for flooded roads and lots."
+        else:
+            e["family"] = "winter" if e["hazard"] in ("ice", "snow", "mix", "alert") else e["hazard"]
+        e["rush"] = rush_windows(cfg, e["start"], e["end"])
     events.sort(key=lambda e: (-RANK[e["level"]], -SEV_RANK[e["severity"]], e["start"]))
     return events
 
