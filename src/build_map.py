@@ -459,7 +459,7 @@ def flag_view(i, day, cfg, xy, r, mp):
         items.append((RANK[ev["level"]] * 10 + SEVR[sev],
                       f'<li class="{ev["level"]}{" minor" if sev == "minor" else ""}" data-k="{ev["locations"][0]}"><div class="tags"><span class="sev {sev or "hu"}">{SEVW[sev]}</span>{chg(ev.get("change"))}<span class="ics">{event_icons(ev)}</span></div>'
                       f'<b>{e(ev["title"])}: {e(ev["regions"])}</b><small class="when">{e(ev["when"])}</small>'
-                      f'<small>{e(", ".join(ev["names"]))}. {e(ev["detail"])}{e(alerts)}</small></li>'))
+                      f'<small>{e(summary.where_text(ev))}{e(ev["detail"])}{e(alerts)}</small></li>'))
     for re_ in r.get("run_events", []):
         if re_["day"] != i:
             continue
