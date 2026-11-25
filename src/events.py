@@ -263,7 +263,7 @@ def build_events(spans_by_key, cfg):
         e["regions"] = regions_text(cfg, e["locations"])
         if e["hazard"] == "alert" and is_flood(e["title"]):
             e["family"] = "flood"
-            e["detail"] = "Official flood alert from the National Weather Service. Watch for flooded roads and lots."
+            e["detail"] = "Watch for flooded roads and lots."
         else:
             e["family"] = "winter" if e["hazard"] in ("ice", "snow", "mix", "alert") else e["hazard"]
         e["rush"] = rush_windows(cfg, e["start"], e["end"])
